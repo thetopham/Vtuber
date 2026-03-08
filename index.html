@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neuro-Style VTuber Demo</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="layout">
+    <section class="stage-panel">
+      <h1>VTuber Stream Demo</h1>
+      <p class="subtitle">A browser VTuber inspired by Neuro-style AI streamers.</p>
+
+      <div class="stage" aria-label="VTuber avatar stage">
+        <div id="avatar" class="avatar idle" role="img" aria-label="Anime VTuber avatar">
+          <div class="hair"></div>
+          <div class="face">
+            <div class="eyes">
+              <span class="eye left"></span>
+              <span class="eye right"></span>
+            </div>
+            <div id="mouth" class="mouth"></div>
+            <div class="blush left"></div>
+            <div class="blush right"></div>
+          </div>
+          <div class="body"></div>
+        </div>
+
+        <div id="speech-bubble" class="speech-bubble" aria-live="polite">
+          Type a message and press “Talk”!
+        </div>
+      </div>
+
+      <div class="meter-wrap">
+        <label for="energy">Voice energy</label>
+        <div class="meter-track" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="energy" class="meter-fill"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="controls-panel">
+      <h2>Control Desk</h2>
+      <label for="prompt">What should your VTuber say?</label>
+      <textarea id="prompt" rows="4" placeholder="Hey chat! Today we are speedrunning coding challenges."></textarea>
+
+      <div class="actions">
+        <button id="talk-btn" type="button">Talk</button>
+        <button id="idle-btn" type="button">Reset to Idle</button>
+      </div>
+
+      <label for="speed">Speech speed: <span id="speed-label">1.0x</span></label>
+      <input id="speed" type="range" min="0.6" max="1.6" step="0.1" value="1" />
+
+      <p class="hint">Tip: Uses your browser's built-in speech synthesis. No backend needed.</p>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
