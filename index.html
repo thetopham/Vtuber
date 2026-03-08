@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NovaAI VTuber</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="stage" aria-label="VTuber stage">
+        <div class="avatar" id="avatar" aria-live="polite">
+          <div class="hair"></div>
+          <div class="head">
+            <div class="eye eye-left"></div>
+            <div class="eye eye-right"></div>
+            <div class="mouth" id="mouth"></div>
+          </div>
+          <div class="nameplate">NovaAI</div>
+        </div>
+        <div class="status" id="status">Idle — waiting for chat</div>
+      </section>
+
+      <section class="panel" aria-label="Chat panel">
+        <h1>Build your own AI VTuber</h1>
+        <p>
+          This demo creates a Neuro-sama-inspired experience: animated avatar,
+          auto-generated responses, and text-to-speech output.
+        </p>
+
+        <form id="chat-form" class="chat-form">
+          <label for="chat-input">Viewer message</label>
+          <input
+            id="chat-input"
+            name="chat"
+            type="text"
+            maxlength="220"
+            placeholder="Ask NovaAI anything..."
+            required
+          />
+          <button type="submit">Send</button>
+        </form>
+
+        <div class="controls">
+          <button id="voice-toggle" type="button">Voice: On</button>
+          <button id="mood-toggle" type="button">Mood: Chill</button>
+        </div>
+
+        <section class="chat-log" id="chat-log" aria-live="polite" aria-label="Chat log"></section>
+      </section>
+    </main>
+
+    <template id="message-template">
+      <article class="message">
+        <h2 class="speaker"></h2>
+        <p class="text"></p>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
