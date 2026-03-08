@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nova VTuber</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: radial-gradient(circle at top, #191030, #09060f 45%, #050409);
+        color: #efecff;
+      }
+      .container {
+        min-height: 100vh;
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 24px;
+        display: grid;
+        gap: 24px;
+      }
+      .avatar-wrap {
+        display: grid;
+        place-items: center;
+      }
+      .avatar {
+        width: 220px;
+        height: 220px;
+        border-radius: 50%;
+        background: linear-gradient(145deg, #8e5cff, #34d1ff);
+        position: relative;
+        box-shadow: 0 0 40px #6b45ff88;
+      }
+      .eye {
+        width: 26px;
+        height: 26px;
+        background: #1a1336;
+        border-radius: 50%;
+        position: absolute;
+        top: 78px;
+        animation: blink 4s infinite;
+      }
+      .eye.left { left: 62px; }
+      .eye.right { right: 62px; }
+      .mouth {
+        position: absolute;
+        left: 50%;
+        bottom: 62px;
+        transform: translateX(-50%);
+        width: 80px;
+        height: 16px;
+        border-radius: 12px;
+        background: #241a47;
+        transition: all 0.15s ease;
+      }
+      .talking .mouth {
+        height: 34px;
+        border-radius: 0 0 18px 18px;
+        background: #311f67;
+      }
+      .badge {
+        margin-top: 12px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        background: #ffffff15;
+        border: 1px solid #ffffff2e;
+      }
+      .panel {
+        background: #ffffff12;
+        border: 1px solid #ffffff26;
+        border-radius: 14px;
+        padding: 16px;
+      }
+      .chat-log {
+        min-height: 220px;
+        max-height: 320px;
+        overflow: auto;
+        display: grid;
+        gap: 10px;
+      }
+      .msg {
+        padding: 10px 12px;
+        border-radius: 10px;
+        line-height: 1.35;
+      }
+      .user { background: #2b1d54; }
+      .bot { background: #193959; }
+      .input-row {
+        display: flex;
+        gap: 10px;
+        margin-top: 10px;
+      }
+      input {
+        flex: 1;
+        border-radius: 8px;
+        border: 1px solid #ffffff2e;
+        padding: 10px;
+        background: #05070c;
+        color: #efecff;
+      }
+      button {
+        border: none;
+        border-radius: 8px;
+        padding: 10px 14px;
+        background: #8e5cff;
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      @keyframes blink {
+        0%, 44%, 48%, 100% { transform: scaleY(1); }
+        46% { transform: scaleY(0.1); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="avatar-wrap">
+        <div id="avatar" class="avatar">
+          <div class="eye left"></div>
+          <div class="eye right"></div>
+          <div class="mouth"></div>
+        </div>
+        <div id="emotionBadge" class="badge">emotion: neutral</div>
+      </div>
+
+      <div class="panel">
+        <h2>Nova // Neuro-style VTuber Demo</h2>
+        <div id="chatLog" class="chat-log"></div>
+        <div class="input-row">
+          <input id="msgInput" placeholder="Talk to Nova..." />
+          <button id="sendBtn">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const chatLog = document.getElementById('chatLog');
+      const input = document.getElementById('msgInput');
+      const sendBtn = document.getElementById('sendBtn');
+      const avatar = document.getElementById('avatar');
+      const badge = document.getElementById('emotionBadge');
+
+      function addMessage(text, who) {
+        const div = document.createElement('div');
+        div.className = `msg ${who}`;
+        div.textContent = text;
+        chatLog.appendChild(div);
+        chatLog.scrollTop = chatLog.scrollHeight;
+      }
+
+      async function send() {
+        const message = input.value.trim();
+        if (!message) return;
+        addMessage(message, 'user');
+        input.value = '';
+
+        const res = await fetch('/api/respond', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+
+        const data = await res.json();
+        addMessage(data.reply, 'bot');
+
+        badge.textContent = `emotion: ${data.avatar.emotion}`;
+        avatar.classList.add('talking');
+        setTimeout(() => avatar.classList.remove('talking'), 500 + data.avatar.intensity * 500);
+      }
+
+      sendBtn.addEventListener('click', send);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') send();
+      });
+
+      addMessage('Nova online. Drop your first message, chat.', 'bot');
+    </script>
+  </body>
+</html>
