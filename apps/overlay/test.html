@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Overlay Test Controls</title>
+    <style>
+      body { font-family: Inter, Arial, sans-serif; background: #111827; color: #fff; margin: 0; padding: 24px; }
+      .card { max-width: 760px; margin: auto; background: #1f2937; border-radius: 14px; padding: 20px; }
+      input, select, button { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #374151; }
+      button { cursor: pointer; background: #2563eb; color: white; border: none; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+      code { background: #0b1220; padding: 2px 6px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Overlay Test Controls</h1>
+      <p>Controller API base: <code id="base"></code></p>
+      <div class="row">
+        <input id="subtitle" value="This is a browser test subtitle" style="flex:1" />
+        <button onclick="sendSubtitle()">Send Subtitle</button>
+      </div>
+      <div class="row">
+        <select id="emotion">
+          <option>neutral</option><option>happy</option><option>angry</option><option>sad</option><option>surprised</option><option>thinking</option>
+        </select>
+        <button onclick="sendEmotion()">Set Emotion</button>
+        <button onclick="sendSpeaking(true)">Speaking On</button>
+        <button onclick="sendSpeaking(false)">Speaking Off</button>
+      </div>
+      <div class="row"><button onclick="runDemo()">Run Demo Sequence</button></div>
+      <pre id="out"></pre>
+    </div>
+    <script>
+      const base = `http://${location.hostname || 'localhost'}:8787`;
+      document.getElementById('base').textContent = base;
+      const out = document.getElementById('out');
+      async function post(path, body) {
+        const res = await fetch(base + path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+        const json = await res.json();
+        out.textContent = JSON.stringify(json, null, 2);
+      }
+      window.sendSubtitle = () => post('/api/subtitle', { text: document.getElementById('subtitle').value, characterName: 'Nova' });
+      window.sendEmotion = () => post('/api/emotion', { emotion: document.getElementById('emotion').value });
+      window.sendSpeaking = (speaking) => post('/api/speaking', { speaking });
+      window.runDemo = () => post('/api/test-sequence', {});
+    </script>
+  </body>
+</html>

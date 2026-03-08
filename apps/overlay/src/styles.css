@@ -1,0 +1,153 @@
+:root {
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  color: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.overlay-root {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  padding: 24px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.overlay-root.is-speaking .subtitle-shell {
+  border-color: #5df2a4;
+  box-shadow: 0 0 24px rgba(93, 242, 164, 0.28);
+}
+
+.subtitle-shell {
+  width: min(1100px, 90vw);
+  border-radius: 22px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  padding: 18px 24px 24px;
+  background: linear-gradient(180deg, rgba(10, 10, 18, 0.9) 0%, rgba(7, 7, 12, 0.75) 100%);
+  backdrop-filter: blur(8px);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.meta-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.character-name {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #8ed1ff;
+}
+
+.speaking-pill,
+.emotion-badge {
+  font-size: 0.85rem;
+  border-radius: 999px;
+  padding: 4px 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.speaking-pill.active {
+  background: rgba(93, 242, 164, 0.25);
+  color: #5df2a4;
+}
+
+.speaking-pill.idle {
+  background: rgba(255, 255, 255, 0.12);
+  color: #cbcbcb;
+}
+
+.emotion-badge {
+  background: rgba(142, 209, 255, 0.18);
+  color: #8ed1ff;
+}
+
+.subtitle-text {
+  margin: 0;
+  font-size: clamp(1.35rem, 2.5vw, 2rem);
+  line-height: 1.35;
+  font-weight: 600;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.75);
+}
+
+.top-left-status {
+  position: absolute;
+  left: 24px;
+  top: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.55);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.dot-connected {
+  background: #5df2a4;
+}
+
+.dot-connecting {
+  background: #ffd26b;
+}
+
+.dot-disconnected {
+  background: #ff7878;
+}
+
+.debug-toggle {
+  position: absolute;
+  pointer-events: auto;
+  right: 24px;
+  top: 20px;
+  border: 0;
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: rgba(21, 21, 31, 0.8);
+  color: #fff;
+  cursor: pointer;
+}
+
+.debug-panel {
+  position: absolute;
+  pointer-events: auto;
+  right: 24px;
+  top: 62px;
+  width: min(420px, 50vw);
+  background: rgba(8, 8, 14, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  padding: 14px;
+  font-size: 0.85rem;
+}
+
+.debug-panel pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+}

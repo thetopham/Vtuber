@@ -1,0 +1,20 @@
+{
+  "name": "ai-vtuber-controller",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local-first MVP monorepo for AI VTuber controller, OBS overlay, and future VTube Studio integration.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n OVERLAY,CONTROLLER -c cyan,magenta \"npm run dev --workspace @vtuber/overlay\" \"npm run dev --workspace @vtuber/controller\"",
+    "dev:overlay": "npm run dev --workspace @vtuber/overlay",
+    "dev:controller": "npm run dev --workspace @vtuber/controller",
+    "build": "npm run build --workspace @vtuber/shared && npm run build --workspace @vtuber/controller && npm run build --workspace @vtuber/overlay",
+    "typecheck": "npm run typecheck --workspace @vtuber/shared && npm run typecheck --workspace @vtuber/controller && npm run typecheck --workspace @vtuber/overlay"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
