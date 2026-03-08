@@ -1,0 +1,16 @@
+{
+  "name": "vtuber-controller-mvp",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n controller,overlay -c cyan,magenta \"npm run dev -w @vtuber/controller\" \"npm run dev -w @vtuber/overlay\"",
+    "build": "npm run build -w @vtuber/shared && npm run build -w @vtuber/controller && npm run build -w @vtuber/overlay"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

@@ -1,0 +1,125 @@
+:root {
+  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  color: #f4f7ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+}
+
+.overlay-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: transparent;
+}
+
+.top-row,
+.hud-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.name-pill,
+.status-pill,
+.emotion-badge,
+.speaking-indicator {
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(15, 18, 33, 0.7);
+  font-weight: 600;
+}
+
+.status-pill.online {
+  color: #73f5c4;
+}
+
+.status-pill.offline {
+  color: #ff8f8f;
+}
+
+.speaking-indicator.active {
+  border-color: rgba(87, 255, 204, 0.85);
+  box-shadow: 0 0 28px rgba(87, 255, 204, 0.45);
+}
+
+.subtitle-wrap {
+  width: min(1100px, 94vw);
+  margin: 0 auto 1.5rem;
+  padding: 1rem 1.4rem;
+  border-radius: 1rem;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.84));
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 20px 38px rgba(0, 0, 0, 0.44);
+}
+
+.subtitle {
+  margin: 0;
+  text-align: center;
+  font-size: clamp(1.3rem, 2.7vw, 2.15rem);
+  line-height: 1.28;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.95);
+}
+
+.debug-toggle {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: rgba(2, 5, 15, 0.85);
+  color: #d8e1ff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.6rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+}
+
+.debug-panel {
+  position: absolute;
+  right: 1rem;
+  top: 3.7rem;
+  width: min(360px, 86vw);
+  background: rgba(5, 7, 18, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.85rem;
+  padding: 0.9rem;
+  font-size: 0.84rem;
+}
+
+.overlay-root.is-speaking .subtitle-wrap {
+  border-color: rgba(77, 244, 193, 0.85);
+  box-shadow: 0 20px 45px rgba(34, 211, 171, 0.32);
+}
+
+.demo-actions {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.demo-actions button {
+  background: rgba(12, 18, 36, 0.85);
+  color: #eff3ff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.55rem;
+  padding: 0.4rem 0.55rem;
+  cursor: pointer;
+  text-align: left;
+}
