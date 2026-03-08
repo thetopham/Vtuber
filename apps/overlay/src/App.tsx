@@ -15,8 +15,9 @@ type ConnectionState = "connecting" | "connected" | "disconnected";
 function getWsUrl(): string {
   const host = window.location.hostname || "localhost";
   const port = import.meta.env.VITE_CONTROLLER_PORT ?? String(DEFAULT_CONTROLLER_PORT);
+  const wsPath = import.meta.env.VITE_WS_PATH ?? DEFAULT_WS_PATH;
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  return `${protocol}://${host}:${port}${DEFAULT_WS_PATH}`;
+  return `${protocol}://${host}:${port}${wsPath}`;
 }
 
 export function App() {

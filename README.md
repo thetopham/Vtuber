@@ -79,7 +79,7 @@ cp .env.example .env
 ```
 
 Controller reads `.env` from repo root by default.
-Overlay can use `VITE_CONTROLLER_PORT`.
+Overlay can use `VITE_CONTROLLER_PORT` and `VITE_WS_PATH` (defaults to `/ws`).
 
 ## OBS Browser Source setup
 
