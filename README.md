@@ -12,18 +12,14 @@ A TypeScript monorepo MVP with OBS overlay and controller APIs.
   /shared       Shared event schema/types/constants/config
 ```
 
-## What this PR adds
+## AI emotion selection (safe structured intent)
 
-This PR adds a minimal AI orchestration layer that:
-- Calls the OpenAI **Responses API**.
-- Uses **structured output** with a strict JSON schema.
-- Produces a validated `PerformanceIntent` object.
-- Feeds that intent into the existing performance loop when appropriate.
-
-Architecture rule:
-- AI returns structured intent.
-- Controller/performance loop executes intent.
-- AI does not directly trigger raw avatar hotkeys or raw overlay events.
+This PR keeps the architecture narrow and deterministic:
+- AI returns a structured `PerformanceIntent`.
+- AI chooses **one internal emotion label only**.
+- Controller executes via the existing performance loop.
+- Existing expression engine remains source-of-truth for mapping emotion to avatar expressions/toggles.
+- AI does not directly control raw VTube Studio hotkeys/toggles.
 
 ## Required environment variables
 
@@ -60,26 +56,29 @@ type PerformanceIntent = {
 };
 ```
 
-Validation is done with Zod before the intent is used.
+Validation is done with strict Zod schemas (`.strict()`, no extra keys).
+
+## Allowed AI emotion labels
+
+- `neutral`
+- `happy`
+- `angry`
+- `pouting`
+- `embarrassed`
+- `excited`
+- `sad`
+- `shocked`
+- `wink`
+
+## Emotion mapping in avatar pipeline
+
+1. `/api/respond-only` or `/api/respond` asks AI for `PerformanceIntent`.
+2. Controller validates intent; invalid model output falls back to `neutral` emotion safely.
+3. `/api/respond` sends `spokenText` + `emotion` into `PerformanceLoop.performLine`.
+4. `PerformanceLoop` calls `ExpressionEngine.buildExpressionState(emotion)` and applies it.
+5. Existing avatar adapter and hotkey mapping stay unchanged.
 
 ## API endpoints
-
-### Overlay/state endpoints
-- `POST /api/subtitle`
-- `POST /api/speaking`
-- `POST /api/status`
-- `POST /api/state`
-
-### Avatar endpoints
-- `POST /api/avatar/emotion`
-- `POST /api/avatar/expression`
-- `POST /api/avatar/test-cycle`
-- `GET /api/avatar/status`
-
-### Speech endpoints
-- `POST /api/speak`
-- `POST /api/test/speak`
-- `GET /api/speech/status`
 
 ### AI orchestration endpoints
 - `POST /api/respond-only`
@@ -89,39 +88,62 @@ Validation is done with Zod before the intent is used.
   - Generates and validates `PerformanceIntent`.
   - If `shouldSpeak === true`, executes existing speak/performance loop.
 - `GET /api/ai/status`
-  - Returns in-memory AI debug status (key configured, model, last intent, last validation error, whether last `/api/respond` triggered speaking).
+  - Returns in-memory AI debug status:
+    - `lastIntent`
+    - `lastEmotion`
+    - validation success/error
+    - fallback usage
+    - whether last `/api/respond` triggered speaking
+    - last raw model payload text
+
+### Existing endpoints (unchanged)
+- Overlay/state: `POST /api/subtitle`, `POST /api/speaking`, `POST /api/status`, `POST /api/state`
+- Avatar: `POST /api/avatar/emotion`, `POST /api/avatar/expression`, `POST /api/avatar/test-cycle`, `GET /api/avatar/status`
+- Speech: `POST /api/speak`, `POST /api/test/speak`, `GET /api/speech/status`
 
 ## PowerShell examples
 
 ```powershell
 Invoke-RestMethod -Method POST http://localhost:8787/api/respond-only `
   -ContentType "application/json" `
+  -Body '{"inputType":"manual","text":"Say something surprised ."}'
+
+Invoke-RestMethod -Method POST http://localhost:8787/api/respond-only `
+  -ContentType "application/json" `
+  -Body '{"inputType":"manual","text":"Say something playful and slightly embarrassed."}'
+
+Invoke-RestMethod -Method POST http://localhost:8787/api/respond-only `
+  -ContentType "application/json" `
+  -Body '{"inputType":"manual","text":"Say something hyped after a big win."}'
+
+Invoke-RestMethod -Method POST http://localhost:8787/api/respond-only `
+  -ContentType "application/json" `
   -Body '{"inputType":"manual","text":"Say something surprised about barely surviving."}'
 
 Invoke-RestMethod -Method POST http://localhost:8787/api/respond `
   -ContentType "application/json" `
-  -Body '{"inputType":"event","event":{"type":"game.moment","summary":"The player survived with 1 HP."}}'
+  -Body '{"inputType":"manual","text":"Say something playful and slightly embarrassed."}'
 
 Invoke-RestMethod -Method GET http://localhost:8787/api/ai/status
 ```
 
-## Notes on structured outputs
+## Safe fallback behavior
 
-The orchestration layer uses Responses API structured output so model responses adhere to a JSON schema for deterministic controller behavior.
-
-This keeps model output bounded and safer for live-stream execution compared to freeform response text.
+- If model output fails validation, controller uses fallback intent with `emotion: "neutral"`.
+- Fallback preserves safety and keeps execution deterministic.
+- AI status endpoint reports whether fallback was used.
 
 ## What to test first
 
-1. `POST /api/respond-only` with a manual prompt and verify a valid `PerformanceIntent` returns.
-2. `POST /api/respond` with an event payload and verify `shouldSpeak=true` triggers subtitle + expression + TTS + speaking state.
-3. `GET /api/ai/status` and verify last intent / validation status updates.
+1. `POST /api/respond-only` with manual prompts and verify returned intent always uses an allowed emotion.
+2. `POST /api/respond` and confirm subtitle + speaking-state + TTS + expression all run through existing loop.
+3. `GET /api/ai/status` and verify validation and fallback fields update as expected.
 
 ## Known assumptions
 
 - Orchestration is single-turn and stateless (no memory persistence).
 - AI debug state is in-memory only.
-- `/api/respond` remains single-flight because it uses the existing speech loop behavior.
+- `/api/respond` remains single-flight because it uses existing speech loop behavior.
 
 ## Next follow-up PR
 
@@ -135,5 +157,6 @@ This keeps model output bounded and safer for live-stream execution compared to 
 - No screenshot/screen-analysis ingestion.
 - No memory/database persistence.
 - No scene automation or autonomous scheduling.
-- No voice input / STT.
-- No tool-use or agent loops.
+- No moderation pipeline.
+- No multi-emotion combo generation by the model.
+- No direct model control of raw avatar expressions/hotkeys.
