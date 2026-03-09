@@ -47,11 +47,16 @@ export class AudioPlaybackService {
   private async playWindows(audioPath: string): Promise<void> {
     const escapedPath = audioPath.replace(/\\/g, "\\\\").replace(/'/g, "''");
     const script = [
-      "Add-Type -AssemblyName System",
-      "$player = New-Object System.Media.SoundPlayer",
-      `$player.SoundLocation = '${escapedPath}'`,
-      "$player.Load()",
-      "$player.PlaySync()"
+      "$ErrorActionPreference = 'Stop'",
+      "Add-Type -AssemblyName PresentationCore",
+      "$player = New-Object System.Windows.Media.MediaPlayer",
+      `$player.Open([Uri]::new('${escapedPath}'))`,
+      "$player.Volume = 1.0",
+      "$player.Play()",
+      "while (-not $player.NaturalDuration.HasTimeSpan) { Start-Sleep -Milliseconds 25 }",
+      "while ($player.Position -lt $player.NaturalDuration.TimeSpan) { Start-Sleep -Milliseconds 25 }",
+      "$player.Stop()",
+      "$player.Close()"
     ].join("; ");
 
     await this.runCommand("powershell.exe", ["-NoProfile", "-STA", "-Command", script]);
@@ -59,7 +64,17 @@ export class AudioPlaybackService {
 
   private runCommand(command: string, args: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
-      const child = spawn(command, args, { stdio: "ignore" });
+      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+      let stdout = "";
+      let stderr = "";
+
+      child.stdout.on("data", (chunk: Buffer) => {
+        stdout += chunk.toString();
+      });
+
+      child.stderr.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
 
       child.on("error", (error) => {
         reject(new Error(`Failed to start audio playback command '${command}': ${error.message}`));
@@ -71,7 +86,12 @@ export class AudioPlaybackService {
           return;
         }
 
-        reject(new Error(`Audio playback command '${command}' exited with code ${code}`));
+        const details = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
+        reject(
+          new Error(
+            `Audio playback command '${command}' exited with code ${code}${details ? `: ${details}` : ""}`
+          )
+        );
       });
     });
   }
