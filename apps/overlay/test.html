@@ -48,10 +48,10 @@
       <h1>Overlay Test Controls</h1>
       <p>Controller API base: <code id="base"></code></p>
 
-      <h2>Subtitle</h2>
+      <h2>TTS</h2>
       <div class="row">
-        <input id="subtitle" value="This is a browser test subtitle" style="flex:1" />
-        <button onclick="sendSubtitle()">Send Subtitle</button>
+        <input id="tts" value="This is a browser test TTS line" style="flex:1" />
+        <button onclick="sendTts()">Send TTS</button>
       </div>
 
       <h2>Emotion Toggles</h2>
@@ -132,7 +132,7 @@
         }
       }
 
-      window.sendSubtitle = () => request('POST', '/api/subtitle', { text: document.getElementById('subtitle').value, characterName: 'Nova' });
+      window.sendTts = () => request('POST', '/api/speak', { text: document.getElementById('tts').value, emotion: activeEmotion ?? 'neutral' });
 
       window.sendEmotion = async (emotion) => {
         const json = await request('POST', '/api/avatar/emotion', { emotion });
