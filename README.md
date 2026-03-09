@@ -100,6 +100,7 @@ Validation is done with strict Zod schemas (`.strict()`, no extra keys).
 - Overlay/state: `POST /api/subtitle`, `POST /api/speaking`, `POST /api/status`, `POST /api/state`
 - Avatar: `POST /api/avatar/emotion`, `POST /api/avatar/expression`, `POST /api/avatar/test-cycle`, `GET /api/avatar/status`
 - Speech: `POST /api/speak`, `POST /api/test/speak`, `GET /api/speech/status`
+- Persona: `GET /api/persona`, `POST /api/persona`, `GET /api/personas`, `POST /api/personas`, `POST /api/personas/load`
 
 ## PowerShell examples
 

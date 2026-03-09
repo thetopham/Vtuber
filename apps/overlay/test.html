@@ -98,6 +98,16 @@
         <button onclick="loadPersona()">Reload Persona</button>
         <button onclick="savePersona()">Save Persona</button>
       </div>
+      <p style="margin-top:0;color:#cbd5e1">Persona presets</p>
+      <div class="row">
+        <input id="persona-preset-name" placeholder="Preset name (e.g., Cozy Storyteller)" style="flex:1" />
+        <button onclick="savePersonaPreset()">Save as Preset</button>
+      </div>
+      <div class="row">
+        <select id="persona-preset-select" style="flex:1"></select>
+        <button onclick="loadSelectedPersonaPreset()">Load Selected Preset</button>
+        <button onclick="refreshPersonaPresets()">Refresh Presets</button>
+      </div>
 
       <h2>Emotion Toggles</h2>
       <div class="row" id="emotion-toggles"></div>
@@ -128,6 +138,8 @@
       const emotionContainer = document.getElementById('emotion-toggles');
       const chatInput = document.getElementById('chat-input');
       const chatLog = document.getElementById('chat-log');
+      const personaPresetNameInput = document.getElementById('persona-preset-name');
+      const personaPresetSelect = document.getElementById('persona-preset-select');
       let activeEmotion = null;
 
       document.getElementById('base').textContent = base;
@@ -179,6 +191,16 @@
         document.getElementById('persona-background').value = persona.background ?? '';
         document.getElementById('persona-boundaries').value = persona.boundaries ?? '';
         document.getElementById('persona-extra').value = persona.extraInstructions ?? '';
+      }
+
+      function renderPersonaPresets(presets) {
+        personaPresetSelect.innerHTML = '';
+        presets.forEach((presetName) => {
+          const option = document.createElement('option');
+          option.value = presetName;
+          option.textContent = presetName;
+          personaPresetSelect.appendChild(option);
+        });
       }
 
       async function request(method, path, body) {
@@ -261,6 +283,7 @@
           writePersonaForm(json.persona);
         }
       };
+
       window.savePersona = async () => {
         const json = await request('POST', '/api/persona', readPersonaForm());
         if (json?.ok && json.persona) {
@@ -268,8 +291,47 @@
         }
       };
 
+      window.refreshPersonaPresets = async () => {
+        const json = await request('GET', '/api/personas');
+        if (json?.ok && Array.isArray(json.presets)) {
+          renderPersonaPresets(json.presets);
+        }
+      };
+
+      window.savePersonaPreset = async () => {
+        const presetName = personaPresetNameInput.value.trim();
+        if (!presetName) {
+          showStatus('error', 'Preset name cannot be empty.');
+          return;
+        }
+
+        const json = await request('POST', '/api/personas', {
+          presetName,
+          persona: readPersonaForm()
+        });
+
+        if (json?.ok && Array.isArray(json.presets)) {
+          renderPersonaPresets(json.presets);
+          personaPresetSelect.value = presetName;
+        }
+      };
+
+      window.loadSelectedPersonaPreset = async () => {
+        const presetName = personaPresetSelect.value;
+        if (!presetName) {
+          showStatus('error', 'Select a persona preset to load.');
+          return;
+        }
+
+        const json = await request('POST', '/api/personas/load', { presetName });
+        if (json?.ok && json.persona) {
+          writePersonaForm(json.persona);
+        }
+      };
+
       renderEmotionToggles();
       loadPersona();
+      refreshPersonaPresets();
       chatInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
           event.preventDefault();
