@@ -45,13 +45,22 @@ export class AudioPlaybackService {
   }
 
   private async playWindows(audioPath: string): Promise<void> {
-    const escapedPath = audioPath.replace(/\\/g, "\\\\").replace(/'/g, "''");
+    const escapedPath = audioPath.replace(/'/g, "''");
     const script = [
-      "Add-Type -AssemblyName System",
-      "$player = New-Object System.Media.SoundPlayer",
-      `$player.SoundLocation = '${escapedPath}'`,
-      "$player.Load()",
-      "$player.PlaySync()"
+      "Add-Type -AssemblyName PresentationCore",
+      "$player = New-Object System.Windows.Media.MediaPlayer",
+      `$uri = New-Object System.Uri('${escapedPath}')`,
+      "$player.Open($uri)",
+      "$completed = [System.Threading.AutoResetEvent]::new($false)",
+      "$failed = $null",
+      "$onEnded = [System.EventHandler] { $completed.Set() | Out-Null }",
+      "$onFailed = [System.EventHandler[System.Windows.ExceptionEventArgs]] { param($sender, $args) $script:failed = $args.ErrorException; $completed.Set() | Out-Null }",
+      "$player.add_MediaEnded($onEnded)",
+      "$player.add_MediaFailed($onFailed)",
+      "$player.Play()",
+      "if (-not $completed.WaitOne(60000)) { throw 'Timed out waiting for audio playback to finish.' }",
+      "if ($failed) { throw $failed }",
+      "$player.Close()"
     ].join("; ");
 
     await this.runCommand("powershell.exe", ["-NoProfile", "-STA", "-Command", script]);
@@ -59,7 +68,12 @@ export class AudioPlaybackService {
 
   private runCommand(command: string, args: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
-      const child = spawn(command, args, { stdio: "ignore" });
+      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+      let stderr = "";
+
+      child.stderr.on("data", (chunk: Buffer | string) => {
+        stderr += chunk.toString();
+      });
 
       child.on("error", (error) => {
         reject(new Error(`Failed to start audio playback command '${command}': ${error.message}`));
@@ -71,7 +85,8 @@ export class AudioPlaybackService {
           return;
         }
 
-        reject(new Error(`Audio playback command '${command}' exited with code ${code}`));
+        const details = stderr.trim();
+        reject(new Error(`Audio playback command '${command}' exited with code ${code}${details ? `: ${details}` : ""}`));
       });
     });
   }
