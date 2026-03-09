@@ -31,7 +31,7 @@ export class OpenAIResponsesService {
       },
       body: JSON.stringify({
         model: env.openaiModel,
-        temperature: 0.3,
+        
         input: [
           {
             role: "system",
