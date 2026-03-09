@@ -76,15 +76,23 @@
       <p style="margin-top:0;color:#cbd5e1">Sends <code>{ inputType: "manual", text }</code> to the controller API to test AI response behavior.</p>
       <div id="chat-log" class="chat-log"></div>
 
-      <h2>Backend Persona (SillyTavern-style card)</h2>
+      <h2>Backend Persona</h2>
       <p style="margin-top:0;color:#cbd5e1">These settings only affect AI response generation in the controller backend, not the visible overlay layout.</p>
+      <p style="margin-top:0;color:#cbd5e1">Name</p>
       <div class="row"><input id="persona-name" placeholder="Name" style="flex:1" /></div>
+      <p style="margin-top:0;color:#cbd5e1">Role / archetype</p>
       <div class="row"><input id="persona-role" placeholder="Role / archetype" style="flex:1" /></div>
+      <p style="margin-top:0;color:#cbd5e1">Personality</p>
       <div class="row"><textarea id="persona-personality" placeholder="Personality" style="flex:1;min-height:68px"></textarea></div>
+      <p style="margin-top:0;color:#cbd5e1">Tone</p>
       <div class="row"><input id="persona-tone" placeholder="Tone" style="flex:1" /></div>
+      <p style="margin-top:0;color:#cbd5e1">Style rules</p>
       <div class="row"><textarea id="persona-style" placeholder="Style rules" style="flex:1;min-height:68px"></textarea></div>
+      <p style="margin-top:0;color:#cbd5e1">Background / scenario</p>
       <div class="row"><textarea id="persona-background" placeholder="Background / scenario" style="flex:1;min-height:72px"></textarea></div>
+      <p style="margin-top:0;color:#cbd5e1">Boundaries / safety</p>
       <div class="row"><textarea id="persona-boundaries" placeholder="Boundaries / safety" style="flex:1;min-height:68px"></textarea></div>
+      <p style="margin-top:0;color:#cbd5e1">Extra operator instructions (optional)</p>
       <div class="row"><textarea id="persona-extra" placeholder="Extra operator instructions (optional)" style="flex:1;min-height:68px"></textarea></div>
       <div class="row">
         <button onclick="loadPersona()">Reload Persona</button>
