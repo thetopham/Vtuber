@@ -38,6 +38,19 @@
       }
       .request-status.ok { background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); }
       .request-status.error { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.45); }
+      .chat-log {
+        margin: 0;
+        padding: 12px;
+        min-height: 96px;
+        max-height: 220px;
+        overflow: auto;
+        border: 1px solid #374151;
+        border-radius: 8px;
+        background: #0b1220;
+      }
+      .chat-line { margin: 0 0 8px; color: #d1d5db; }
+      .chat-line:last-child { margin-bottom: 0; }
+      .chat-role { color: #93c5fd; font-weight: 600; }
       code { background: #0b1220; padding: 2px 6px; border-radius: 6px; }
       pre { background: #0b1220; border-radius: 8px; padding: 10px; overflow: auto; }
       h2 { margin: 18px 0 8px; font-size: 1.05rem; }
@@ -53,6 +66,15 @@
         <input id="tts" value="This is a browser test TTS line" style="flex:1" />
         <button onclick="sendTts()">Send TTS</button>
       </div>
+
+      <h2>Chat Input Test</h2>
+      <div class="row">
+        <input id="chat-input" placeholder="Type a chat message for /api/respond-only" style="flex:1" />
+        <button onclick="sendChatRespondOnly()">Respond Only</button>
+        <button onclick="sendChatRespondAndSpeak()">Respond + Speak</button>
+      </div>
+      <p style="margin-top:0;color:#cbd5e1">Sends <code>{ inputType: "manual", text }</code> to the controller API to test AI response behavior.</p>
+      <div id="chat-log" class="chat-log"></div>
 
       <h2>Backend Persona (SillyTavern-style card)</h2>
       <p style="margin-top:0;color:#cbd5e1">These settings only affect AI response generation in the controller backend, not the visible overlay layout.</p>
@@ -96,6 +118,8 @@
       const out = document.getElementById('out');
       const status = document.getElementById('request-status');
       const emotionContainer = document.getElementById('emotion-toggles');
+      const chatInput = document.getElementById('chat-input');
+      const chatLog = document.getElementById('chat-log');
       let activeEmotion = null;
 
       document.getElementById('base').textContent = base;
@@ -115,6 +139,14 @@
         status.style.display = 'block';
         status.className = `request-status ${level}`;
         status.textContent = message;
+      }
+
+      function addChatLine(role, text) {
+        const line = document.createElement('p');
+        line.className = 'chat-line';
+        line.innerHTML = `<span class="chat-role">${role}:</span> ${text}`;
+        chatLog.appendChild(line);
+        chatLog.scrollTop = chatLog.scrollHeight;
       }
 
       function readPersonaForm() {
@@ -173,6 +205,35 @@
 
       window.sendTts = () => request('POST', '/api/speak', { text: document.getElementById('tts').value, emotion: activeEmotion ?? 'neutral' });
 
+      async function sendChat(path) {
+        const text = chatInput.value.trim();
+        if (!text) {
+          showStatus('error', 'Chat input cannot be empty.');
+          return;
+        }
+
+        addChatLine('you', text);
+        chatInput.value = '';
+
+        const json = await request('POST', path, { inputType: 'manual', text });
+        if (!json?.ok) {
+          return;
+        }
+
+        if (json.intent) {
+          const summary = `shouldSpeak=${json.intent.shouldSpeak}, emotion=${json.intent.emotion}, spokenText="${json.intent.spokenText}"`;
+          addChatLine('assistant', summary);
+          return;
+        }
+
+        if (json.speech) {
+          addChatLine('system', `Speech status: ${JSON.stringify(json.speech)}`);
+        }
+      }
+
+      window.sendChatRespondOnly = () => sendChat('/api/respond-only');
+      window.sendChatRespondAndSpeak = () => sendChat('/api/respond');
+
       window.sendEmotion = async (emotion) => {
         const json = await request('POST', '/api/avatar/emotion', { emotion });
         if (json?.ok) {
@@ -201,6 +262,12 @@
 
       renderEmotionToggles();
       loadPersona();
+      chatInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          sendChatRespondOnly();
+        }
+      });
     </script>
   </body>
 </html>
