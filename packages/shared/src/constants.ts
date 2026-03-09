@@ -9,6 +9,7 @@ export const DEFAULT_STATE = {
   subtitle: "System ready. Waiting for command...",
   speaking: false,
   emotion: "neutral" as Emotion,
+  state: "idle" as const,
   status: "idle",
   scene: "default"
 };

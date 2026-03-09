@@ -6,6 +6,7 @@ import {
   expressionInputSchema,
   makeEvent,
   parseEvent,
+  speechRequestSchema,
   type EventName,
   type EventPayloadMap,
   type OverlayEvent,
@@ -16,7 +17,10 @@ import { z } from "zod";
 import { VTubeStudioAdapter } from "./adapters/VTubeStudioAdapter";
 import { EventBus } from "./eventBus";
 import { env } from "./env";
+import { AudioPlaybackService } from "./services/AudioPlaybackService";
 import { ExpressionEngine } from "./services/ExpressionEngine";
+import { OpenAISpeechProvider } from "./services/OpenAISpeechProvider";
+import { PerformanceLoop } from "./services/PerformanceLoop";
 import { VTubeStudioClient } from "./services/vtubeStudio";
 import { createInitialState, patchState } from "./state";
 
@@ -38,6 +42,12 @@ const avatarAdapter = new VTubeStudioAdapter({
 });
 
 const expressionEngine = new ExpressionEngine(avatarAdapter);
+const speechProvider = new OpenAISpeechProvider({
+  apiKey: env.openaiApiKey,
+  model: env.openaiTtsModel,
+  voice: env.openaiTtsVoice
+});
+const audioPlaybackService = new AudioPlaybackService();
 
 let currentState: OverlayState = createInitialState();
 
@@ -63,6 +73,13 @@ function publish<T extends EventName>(type: T, payload: EventPayloadMap[T]): voi
   broadcast(makeEvent(type, payload));
 }
 
+const performanceLoop = new PerformanceLoop({
+  expressionEngine,
+  speechProvider,
+  audioPlaybackService,
+  publish
+});
+
 eventBus.on("subtitle.set", async ({ text, characterName }) => {
   currentState = patchState(currentState, {
     subtitle: text,
@@ -84,6 +101,10 @@ eventBus.on("status.set", ({ status }) => {
 
 eventBus.on("scene.set", ({ scene }) => {
   currentState = patchState(currentState, { scene });
+});
+
+eventBus.on("state.set", ({ state }) => {
+  currentState = patchState(currentState, { state });
 });
 
 wsServer.on("connection", (socket) => {
@@ -110,6 +131,46 @@ function bindValidatedRoute<T extends EventName>(path: string, type: T): void {
 bindValidatedRoute("/api/subtitle", "subtitle.set");
 bindValidatedRoute("/api/speaking", "speaking.set");
 bindValidatedRoute("/api/status", "status.set");
+
+app.post("/api/speak", async (req, res) => {
+  const parsed = speechRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  }
+
+  if (!env.openaiApiKey) {
+    return res.status(500).json({ ok: false, error: "OPENAI_API_KEY is not configured" });
+  }
+
+  try {
+    await performanceLoop.performSpeech(parsed.data);
+    return res.json({ ok: true, state: currentState });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: (error as Error).message });
+  }
+});
+
+app.post("/api/test/speak", async (_req, res) => {
+  if (!env.openaiApiKey) {
+    return res.status(500).json({ ok: false, error: "OPENAI_API_KEY is not configured" });
+  }
+
+  try {
+    await performanceLoop.performSpeech({
+      text: "System online. Voice test successful.",
+      emotion: "happy"
+    });
+
+    return res.json({ ok: true, state: currentState });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: (error as Error).message });
+  }
+});
+
+app.get("/api/speech/status", (_req, res) => {
+  const speechStatus = performanceLoop.getSpeechStatus(currentState.state);
+  return res.json({ ok: true, speech: speechStatus, state: currentState });
+});
 
 app.post("/api/avatar/emotion", async (req, res) => {
   const parsed = emotionInputSchema.safeParse(req.body);

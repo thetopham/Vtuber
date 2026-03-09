@@ -86,6 +86,7 @@ export function App() {
         <aside className="debug-panel">
           <h2>Debug Panel</h2>
           <p>Scene: {overlayState.scene}</p>
+          <p>State: {overlayState.state}</p>
           <p>Status: {overlayState.status}</p>
           <p>WS: {wsUrl}</p>
           <pre>{JSON.stringify(lastEvent, null, 2)}</pre>
@@ -141,6 +142,11 @@ function applyEventToState(
         return {
           ...prev,
           status: event.payload.status
+        };
+      case "state.set":
+        return {
+          ...prev,
+          state: event.payload.state
         };
       case "scene.set":
         return {
