@@ -47,16 +47,11 @@ export class AudioPlaybackService {
   private async playWindows(audioPath: string): Promise<void> {
     const escapedPath = audioPath.replace(/\\/g, "\\\\").replace(/'/g, "''");
     const script = [
-      "Add-Type -AssemblyName presentationCore",
-      "$player = New-Object System.Windows.Media.MediaPlayer",
-      `$uri = New-Object System.Uri('${escapedPath}')`,
-      "$player.Open($uri)",
-      "$done = $false",
-      "$player.MediaEnded += { $done = $true }",
-      "$player.MediaFailed += { $done = $true }",
-      "$player.Play()",
-      "while (-not $done) { Start-Sleep -Milliseconds 100 }",
-      "$player.Close()"
+      "Add-Type -AssemblyName System",
+      "$player = New-Object System.Media.SoundPlayer",
+      `$player.SoundLocation = '${escapedPath}'`,
+      "$player.Load()",
+      "$player.PlaySync()"
     ].join("; ");
 
     await this.runCommand("powershell.exe", ["-NoProfile", "-STA", "-Command", script]);
