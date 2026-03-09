@@ -7,3 +7,5 @@ export * from "./avatar";
 export * from "./speech";
 
 export * from "./orchestration";
+
+export * from "./ai";
