@@ -2,6 +2,8 @@ import cors from "cors";
 import express from "express";
 import http from "node:http";
 import {
+  avatarEmotionRequestSchema,
+  avatarExpressionRequestSchema,
   eventSchemas,
   makeEvent,
   parseEvent,
@@ -13,8 +15,8 @@ import {
 import { WebSocketServer } from "ws";
 import { EventBus } from "./eventBus";
 import { env } from "./env";
-import { VTubeStudioService } from "./services/vtubeStudio";
 import { createInitialState, patchState } from "./state";
+import { VTubeStudioService } from "./services/vtubeStudio";
 
 const app = express();
 const server = http.createServer(app);
@@ -46,22 +48,19 @@ function publish<T extends EventName>(type: T, payload: EventPayloadMap[T]): voi
   broadcast(makeEvent(type, payload));
 }
 
-eventBus.on("subtitle.set", async ({ text, characterName }) => {
+eventBus.on("subtitle.set", ({ text, characterName }) => {
   currentState = patchState(currentState, {
     subtitle: text,
     ...(characterName ? { characterName } : {})
   });
-  await vtubeStudio.syncState(currentState);
 });
 
-eventBus.on("speaking.set", async ({ speaking }) => {
+eventBus.on("speaking.set", ({ speaking }) => {
   currentState = patchState(currentState, { speaking });
-  await vtubeStudio.setSpeaking(speaking);
 });
 
-eventBus.on("emotion.set", async ({ emotion }) => {
+eventBus.on("emotion.set", ({ emotion }) => {
   currentState = patchState(currentState, { emotion });
-  await vtubeStudio.setEmotion(emotion);
 });
 
 eventBus.on("status.set", ({ status }) => {
@@ -81,18 +80,12 @@ wsServer.on("connection", (socket) => {
   });
 });
 
-function bindValidatedRoute<T extends EventName>(
-  path: string,
-  type: T
-): void {
+function bindValidatedRoute(path: string, type: EventName): void {
   app.post(path, (req, res) => {
     const result = eventSchemas[type].safeParse(req.body);
 
     if (!result.success) {
-      return res.status(400).json({
-        error: "Invalid payload",
-        details: result.error.flatten()
-      });
+      return res.status(400).json({ error: "Invalid payload", details: result.error.flatten() });
     }
 
     publish(type, parseEvent(type, result.data));
@@ -102,71 +95,56 @@ function bindValidatedRoute<T extends EventName>(
 
 bindValidatedRoute("/api/subtitle", "subtitle.set");
 bindValidatedRoute("/api/speaking", "speaking.set");
-bindValidatedRoute("/api/emotion", "emotion.set");
 bindValidatedRoute("/api/status", "status.set");
 
-app.post("/api/test-sequence", async (_req, res) => {
-  const steps: Array<{ delay: number; type: EventName; payload: unknown }> = [
-    {
-      delay: 0,
-      type: "status.set",
-      payload: { status: "Running demo sequence" }
-    },
-    {
-      delay: 300,
-      type: "subtitle.set",
-      payload: { text: "Hello chat, I am online.", characterName: "Nova" }
-    },
-    {
-      delay: 700,
-      type: "speaking.set",
-      payload: { speaking: true }
-    },
-    {
-      delay: 1300,
-      type: "emotion.set",
-      payload: { emotion: "happy" }
-    },
-    {
-      delay: 2400,
-      type: "subtitle.set",
-      payload: { text: "Let me think about our next play..." }
-    },
-    {
-      delay: 3100,
-      type: "emotion.set",
-      payload: { emotion: "thinking" }
-    },
-    {
-      delay: 4200,
-      type: "emotion.set",
-      payload: { emotion: "surprised" }
-    },
-    {
-      delay: 4700,
-      type: "subtitle.set",
-      payload: { text: "Wow! That was unexpected.", characterName: "Nova" }
-    },
-    {
-      delay: 5600,
-      type: "speaking.set",
-      payload: { speaking: false }
-    },
-    {
-      delay: 6000,
-      type: "status.set",
-      payload: { status: "Demo sequence complete" }
-    }
-  ];
+app.post("/api/emotion", async (req, res) => {
+  const result = avatarEmotionRequestSchema.safeParse(req.body);
+  if (!result.success) {
+    return res.status(400).json({ error: "Invalid payload", details: result.error.flatten() });
+  }
 
-  steps.forEach(({ delay, type, payload }) => {
-    setTimeout(() => {
-      const validated = parseEvent(type, payload);
-      publish(type, validated);
-    }, delay);
-  });
+  const expressionState = await vtubeStudio.applyEmotion(result.data.emotion);
+  publish("emotion.set", { emotion: result.data.emotion });
+  return res.json({ ok: true, state: currentState, expressionState });
+});
 
-  return res.json({ ok: true, message: "Demo sequence started" });
+app.post("/api/avatar/emotion", async (req, res) => {
+  const result = avatarEmotionRequestSchema.safeParse(req.body);
+  if (!result.success) {
+    return res.status(400).json({ error: "Invalid payload", details: result.error.flatten() });
+  }
+
+  const expressionState = await vtubeStudio.applyEmotion(result.data.emotion);
+  publish("emotion.set", { emotion: result.data.emotion });
+  return res.json({ ok: true, state: currentState, expressionState });
+});
+
+app.post("/api/avatar/expression", async (req, res) => {
+  const result = avatarExpressionRequestSchema.safeParse(req.body);
+  if (!result.success) {
+    return res.status(400).json({ error: "Invalid payload", details: result.error.flatten() });
+  }
+
+  const expressionState = await vtubeStudio.applyExpressionState(result.data);
+  const inferredEmotion = (result.data.overlays.includes("wink")
+    ? "wink"
+    : result.data.overlays.includes("embarrassed")
+      ? "embarrassed"
+      : result.data.base === "approval"
+        ? "pouting"
+        : result.data.base) as EventPayloadMap["emotion.set"]["emotion"];
+  publish("emotion.set", { emotion: inferredEmotion });
+
+  return res.json({ ok: true, expressionState, state: currentState });
+});
+
+app.post("/api/avatar/test-cycle", async (_req, res) => {
+  await vtubeStudio.runTestCycle();
+  return res.json({ ok: true, message: "Avatar test cycle started" });
+});
+
+app.get("/api/avatar/status", (_req, res) => {
+  return res.json({ ok: true, vtubeStudio: vtubeStudio.getStatus(), state: currentState });
 });
 
 app.get("/health", (_req, res) => {
@@ -176,5 +154,9 @@ app.get("/health", (_req, res) => {
 server.listen(env.port, async () => {
   console.info(`Controller listening on http://localhost:${env.port}`);
   console.info(`WebSocket endpoint ws://localhost:${env.port}${env.wsPath}`);
-  await vtubeStudio.connect();
+  try {
+    await vtubeStudio.connect();
+  } catch (error) {
+    console.warn("[startup] VTube Studio connect failed; API endpoints still available", error);
+  }
 });

@@ -1,33 +1,63 @@
-import type { Emotion, OverlayState } from "@vtuber/shared";
-import type { AvatarAdapter } from "../adapters/AvatarAdapter";
+import type { AvatarExpressionState, InternalEmotion } from "@vtuber/shared";
+import { VTubeStudioAdapter } from "../adapters/VTubeStudioAdapter";
+import { ExpressionEngine } from "./ExpressionEngine";
 
-export class VTubeStudioService implements AvatarAdapter {
+const cycle: InternalEmotion[] = [
+  "neutral",
+  "angry",
+  "pouting",
+  "embarrassed",
+  "excited",
+  "happy",
+  "sad",
+  "shocked",
+  "wink"
+];
+
+export class VTubeStudioService {
+  private readonly adapter = new VTubeStudioAdapter();
+  private readonly engine = new ExpressionEngine(this.adapter);
+
   async connect(): Promise<void> {
-    // TODO: Connect to the VTube Studio WebSocket API.
-    // TODO: Handle authentication flow and plugin token storage.
-    console.info("[VTubeStudioService] connect() stub called");
+    await this.adapter.connect();
   }
 
-  async disconnect(): Promise<void> {
-    // TODO: Gracefully close WebSocket and clean up subscriptions.
-    console.info("[VTubeStudioService] disconnect() stub called");
+  async applyEmotion(emotionInput: string): Promise<AvatarExpressionState> {
+    const normalized = this.engine.normalizeEmotionInput(emotionInput);
+    const state = this.engine.buildExpressionState(normalized);
+    return await this.engine.applyExpressionState(state);
   }
 
-  async setEmotion(emotion: Emotion): Promise<void> {
-    // TODO: Map emotion states to VTube Studio expressions/hotkeys.
-    console.info("[VTubeStudioService] setEmotion() stub called", { emotion });
+  async applyExpressionState(state: AvatarExpressionState): Promise<AvatarExpressionState> {
+    return await this.engine.applyExpressionState(state);
   }
 
-  async setSpeaking(speaking: boolean): Promise<void> {
-    // TODO: Sync speaking state to mouth animation or idle/talk hotkeys.
-    console.info("[VTubeStudioService] setSpeaking() stub called", { speaking });
+  async runTestCycle(): Promise<void> {
+    let delay = 0;
+
+    for (const emotion of cycle) {
+      setTimeout(() => {
+        void this.applyEmotion(emotion);
+      }, delay);
+      delay += 1400;
+    }
   }
 
-  async syncState(state: OverlayState): Promise<void> {
-    // TODO: Keep avatar behavior aligned with controller state.
-    console.info("[VTubeStudioService] syncState() stub called", {
-      emotion: state.emotion,
-      speaking: state.speaking
-    });
+  getStatus(): {
+    connected: boolean;
+    authenticated: boolean;
+    currentExpressionState: AvatarExpressionState;
+    activeExpressions: string[];
+    activeTimers: string[];
+  } {
+    const status = this.adapter.getStatus();
+
+    return {
+      connected: status.connected,
+      authenticated: status.authenticated,
+      currentExpressionState: this.engine.getCurrentState(),
+      activeExpressions: status.activeExpressions,
+      activeTimers: this.engine.getActiveTimers()
+    };
   }
 }

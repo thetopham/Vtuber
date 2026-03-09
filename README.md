@@ -1,57 +1,30 @@
-# AI VTuber Controller MVP (Local-first)
+# AI VTuber Controller Monorepo
 
-A TypeScript monorepo MVP that provides:
-
-- **Controller backend** (Express + WebSocket) as the local brain/control layer.
-- **Overlay frontend** (React + Vite) designed for OBS Browser Source.
-- **Shared package** with strong typing + Zod schemas.
-- **VTube Studio adapter stub** ready for future API integration.
+This repo contains the controller service, OBS overlay, and shared package for a local-first VTuber stack.
 
 ## Monorepo structure
 
 ```text
 /apps
-  /overlay      React overlay UI rendered in OBS Browser Source
   /controller   Express + WebSocket controller service
+  /overlay      React overlay UI rendered in OBS Browser Source
 /packages
   /shared       Shared event schema/types/constants/config
 ```
 
-## What each app does
+## Focus of this PR
 
-### `@vtuber/controller`
-- Exposes REST testing APIs:
-  - `POST /api/subtitle`
-  - `POST /api/speaking`
-  - `POST /api/emotion`
-  - `POST /api/status`
-  - `POST /api/test-sequence`
-- Broadcasts validated events over WebSocket (`/ws` by default).
-- Stores live overlay state in memory.
-- Logs incoming events.
-- Includes event bus abstraction.
-- Includes **VTube Studio integration stub** with TODO markers.
+This iteration adds **VTube Studio expression control only**:
+- Internal emotion normalization and expression mapping
+- VTube Studio WebSocket adapter (auth + hotkey trigger flow)
+- Expression planning with base + overlay rules
+- Avatar test endpoints
 
-### `@vtuber/overlay`
-- Fullscreen transparent React overlay.
-- Displays:
-  - Character name
-  - Subtitle box (bottom center)
-  - Speaking indicator
-  - Emotion badge
-  - Optional debug panel
-- Connects via WebSocket to controller.
-- Includes a small local browser testing page at `/test.html`.
-
-### `@vtuber/shared`
-- Typed event schema + payload maps.
-- Zod validation schemas.
-- Shared constants (emotion set + default state).
-
-## Prerequisites
-
-- Node.js 20+
-- npm 10+
+Non-goals in this PR:
+- No TTS
+- No OpenAI/LLM orchestration
+- No Twitch chat
+- No screen capture / scene automation
 
 ## Install
 
@@ -59,7 +32,7 @@ A TypeScript monorepo MVP that provides:
 npm install
 ```
 
-## Run everything in dev mode
+## Run in dev mode
 
 ```bash
 npm run dev
@@ -67,58 +40,110 @@ npm run dev
 
 Default URLs:
 - Overlay: `http://localhost:5173`
-- Overlay test page: `http://localhost:5173/test.html`
 - Controller health: `http://localhost:8787/health`
 
 ## Environment variables
-
-Copy and adjust env values:
 
 ```bash
 cp .env.example .env
 ```
 
-Controller reads `.env` from repo root by default.
-Overlay can use `VITE_CONTROLLER_PORT` and `VITE_WS_PATH` (defaults to `/ws`).
+Set VTube Studio values in `.env`, especially:
+- `VTS_WS_URL`
+- `VTS_AUTH_TOKEN` (optional; will request token if missing)
+- `VTS_HOTKEY_*` values for expression hotkey IDs
 
-## OBS Browser Source setup
+## VTube Studio setup
 
-1. In OBS, add a new **Browser Source**.
-2. Set URL to `http://localhost:5173`.
-3. Set Width/Height to your stream resolution (e.g. `1920x1080`).
-4. Enable **Shutdown source when not visible** = OFF (recommended).
-5. Enable **Refresh browser when scene becomes active** = ON (optional, useful during dev).
-6. Ensure source background is transparent (overlay is styled for transparency).
+1. Open VTube Studio.
+2. Enable the Public API plugin access.
+3. Create hotkeys for each model expression used in this repo:
+   - `happy`
+   - `angry`
+   - `approval` (used internally as pouting)
+   - `embarrassed`
+   - `excited`
+   - `sad`
+   - `shocked`
+   - `wink`
+4. Set each hotkey ID in `.env` (`VTS_HOTKEY_*`).
+5. Start controller and approve API access when prompted.
+
+## Emotion mapping used by this repo
+
+Internal emotions:
+- `neutral`, `happy`, `angry`, `pouting`, `embarrassed`, `excited`, `sad`, `shocked`, `wink`
+
+Mapping to model expressions:
+- `neutral` → base `happy`, overlays `[]`
+- `happy` → base `happy`, overlays `[]`
+- `angry` → base `angry`
+- `pouting` → base `approval`
+- `embarrassed` → base `happy` + overlay `embarrassed`
+- `excited` → base `excited`
+- `sad` → base `sad`
+- `shocked` → base `shocked`
+- `wink` → base `happy` + overlay `wink`
+
+Rules:
+- One base expression at a time
+- Allowed overlays in v1: `embarrassed`, `wink`
+- Valid combos in v1:
+  - `happy + embarrassed`
+  - `happy + wink`
+  - `excited + embarrassed`
+  - `shocked + embarrassed`
+- Reset behavior before each apply:
+  1. clear active expressions
+  2. apply `happy` default
+  3. apply requested base + overlays
+- Auto-clear timing:
+  - `wink`: ~1000ms
+  - `embarrassed`: ~3000ms
+  - `shocked` base: ~2500ms (auto-reset to happy)
+
+## API endpoints
+
+- `POST /api/avatar/emotion`
+- `POST /api/avatar/expression`
+- `POST /api/avatar/test-cycle`
+- `GET /api/avatar/status`
+
+Legacy overlay endpoints are still available:
+- `POST /api/subtitle`
+- `POST /api/speaking`
+- `POST /api/status`
+- `POST /api/emotion`
 
 ## Example curl commands
 
 ```bash
-curl -X POST http://localhost:8787/api/subtitle \
+curl -X POST http://localhost:8787/api/avatar/emotion \
   -H "Content-Type: application/json" \
-  -d '{"text":"Hello stream!", "characterName":"Nova"}'
+  -d '{"emotion":"embarrassed"}'
 
-curl -X POST http://localhost:8787/api/speaking \
+curl -X POST http://localhost:8787/api/avatar/expression \
   -H "Content-Type: application/json" \
-  -d '{"speaking":true}'
+  -d '{"base":"happy","overlays":["wink"]}'
 
-curl -X POST http://localhost:8787/api/emotion \
-  -H "Content-Type: application/json" \
-  -d '{"emotion":"happy"}'
-
-curl -X POST http://localhost:8787/api/status \
-  -H "Content-Type: application/json" \
-  -d '{"status":"Live and monitoring chat"}'
-
-curl -X POST http://localhost:8787/api/test-sequence \
+curl -X POST http://localhost:8787/api/avatar/test-cycle \
   -H "Content-Type: application/json" \
   -d '{}'
+
+curl http://localhost:8787/api/avatar/status
 ```
 
-## Notes for next phase
+## What to test first
 
-- Add real LLM-driven response orchestration.
-- Add TTS output pipeline.
-- Add Twitch chat ingestion.
-- Add screenshot/screen-analysis event ingestion.
-- Implement real VTube Studio WebSocket auth + expression/hotkey triggers.
-- Add scene automation and richer timeline sequencing.
+1. Confirm `GET /api/avatar/status` shows controller connection/auth state.
+2. Trigger `POST /api/avatar/emotion` with `pouting` and confirm `approval` hotkey runs.
+3. Trigger `POST /api/avatar/expression` with `{ "base": "happy", "overlays": ["wink"] }` and confirm wink clears after ~1s.
+4. Trigger `POST /api/avatar/expression` with `{ "base": "excited", "overlays": ["wink"] }` and confirm invalid combo is rejected in logs.
+5. Run `POST /api/avatar/test-cycle` and observe each mapped emotion in order.
+
+## Next follow-up PR
+
+- Persist VTube Studio auth token automatically to `.env.local` or secure local store.
+- Add stronger response correlation + retry handling for WebSocket requests.
+- Extend combo planner for richer layered expressions.
+- Integrate expression timing with future TTS timeline events.
