@@ -6,23 +6,11 @@ const rootEnvPath = fileURLToPath(new URL("../../../.env", import.meta.url));
 
 dotenv.config({ path: rootEnvPath });
 
-function normalizeVtsUrl(value: string): string {
-  const trimmed = value.trim();
-  const withProtocol = /^[a-z]+:\/\//i.test(trimmed) ? trimmed : `ws://${trimmed}`;
-  const parsed = new URL(withProtocol);
-
-  if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") {
-    throw new Error(`VTS_WS_URL must use ws:// or wss:// protocol. Received: ${value}`);
-  }
-
-  return parsed.toString();
-}
-
 export const env = {
   port: Number(process.env.CONTROLLER_PORT ?? DEFAULT_CONTROLLER_PORT),
   wsPath: process.env.WS_PATH ?? DEFAULT_WS_PATH,
   corsOrigin: process.env.CORS_ORIGIN ?? "*",
-  vtsUrl: normalizeVtsUrl(process.env.VTS_WS_URL ?? "ws://127.0.0.1:8001"),
+  vtsUrl: process.env.VTS_WS_URL ?? "ws://127.0.0.1:8001",
   vtsPluginName: process.env.VTS_PLUGIN_NAME ?? "Vtuber Controller",
   vtsPluginDeveloper: process.env.VTS_PLUGIN_DEVELOPER ?? "Vtuber Team",
   vtsAuthToken: process.env.VTS_AUTH_TOKEN,
