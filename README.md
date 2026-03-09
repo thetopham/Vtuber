@@ -1,124 +1,115 @@
 # AI VTuber Controller MVP (Local-first)
 
-A TypeScript monorepo MVP that provides:
+This monorepo currently focuses on:
 
-- **Controller backend** (Express + WebSocket) as the local brain/control layer.
-- **Overlay frontend** (React + Vite) designed for OBS Browser Source.
-- **Shared package** with strong typing + Zod schemas.
-- **VTube Studio adapter stub** ready for future API integration.
+- OBS overlay transport (`apps/overlay`)
+- Controller APIs (`apps/controller`)
+- Shared event/type contracts (`packages/shared`)
+- **VTube Studio expression control (base + overlays)**
 
-## Monorepo structure
+## VTube Studio setup
 
-```text
-/apps
-  /overlay      React overlay UI rendered in OBS Browser Source
-  /controller   Express + WebSocket controller service
-/packages
-  /shared       Shared event schema/types/constants/config
-```
+1. Open **VTube Studio**.
+2. Enable API access: **Settings → General → Allow Plugin API access**.
+3. Ensure VTS WebSocket server is available at `ws://127.0.0.1:8001` (or set `VTS_WS_URL`).
+4. Create VTS hotkeys on your loaded model with these IDs/names:
+   - `happy`
+   - `angry`
+   - `approval`
+   - `embarrassed`
+   - `excited`
+   - `sad`
+   - `shocked`
+   - `wink`
+5. Run controller and approve plugin auth request the first time.
 
-## What each app does
+## Emotion mapping used by this repo
 
-### `@vtuber/controller`
-- Exposes REST testing APIs:
-  - `POST /api/subtitle`
-  - `POST /api/speaking`
-  - `POST /api/emotion`
-  - `POST /api/status`
-  - `POST /api/test-sequence`
-- Broadcasts validated events over WebSocket (`/ws` by default).
-- Stores live overlay state in memory.
-- Logs incoming events.
-- Includes event bus abstraction.
-- Includes **VTube Studio integration stub** with TODO markers.
+Internal emotion inputs:
 
-### `@vtuber/overlay`
-- Fullscreen transparent React overlay.
-- Displays:
-  - Character name
-  - Subtitle box (bottom center)
-  - Speaking indicator
-  - Emotion badge
-  - Optional debug panel
-- Connects via WebSocket to controller.
-- Includes a small local browser testing page at `/test.html`.
+- `neutral`
+- `happy`
+- `angry`
+- `pouting`
+- `embarrassed`
+- `excited`
+- `sad`
+- `shocked`
+- `wink`
 
-### `@vtuber/shared`
-- Typed event schema + payload maps.
-- Zod validation schemas.
-- Shared constants (emotion set + default state).
+Mapping rules:
 
-## Prerequisites
+- `neutral` → base `happy`
+- `happy` → base `happy`
+- `angry` → base `angry`
+- `pouting` → base `approval`
+- `embarrassed` → base `happy` + overlay `embarrassed`
+- `excited` → base `excited`
+- `sad` → base `sad`
+- `shocked` → base `shocked` (auto-clears to happy)
+- `wink` → base `happy` + overlay `wink`
 
-- Node.js 20+
-- npm 10+
+Expression apply rule:
 
-## Install
+1. Clear active expressions
+2. Apply `happy` reset/default
+3. Apply requested base + overlays
+
+Overlay auto-clear timers:
+
+- `wink`: ~1000ms
+- `embarrassed`: ~3000ms
+- `shocked`: ~2500ms (base fallback to happy)
+
+## API endpoints (avatar)
+
+- `POST /api/avatar/emotion`
+- `POST /api/avatar/expression`
+- `POST /api/avatar/test-cycle`
+- `GET /api/avatar/status`
+
+## Example curl commands
 
 ```bash
-npm install
+curl -X POST http://localhost:8787/api/avatar/emotion \
+  -H "Content-Type: application/json" \
+  -d '{"emotion":"embarrassed"}'
+
+curl -X POST http://localhost:8787/api/avatar/expression \
+  -H "Content-Type: application/json" \
+  -d '{"base":"happy","overlays":["wink"]}'
+
+curl -X POST http://localhost:8787/api/avatar/test-cycle \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+curl http://localhost:8787/api/avatar/status
 ```
 
-## Run everything in dev mode
+## What to test first
 
-```bash
-npm run dev
-```
+1. Start VTube Studio and load model.
+2. Start controller: `npm run dev:controller`.
+3. Call `/api/avatar/emotion` with `happy`, `angry`, and `pouting`.
+4. Call `/api/avatar/emotion` with `wink` and verify it auto-clears.
+5. Call `/api/avatar/test-cycle` and watch the full sequence.
+6. Call `/api/avatar/status` and verify connection/auth/current state.
 
-Default URLs:
-- Overlay: `http://localhost:5173`
-- Overlay test page: `http://localhost:5173/test.html`
-- Controller health: `http://localhost:8787/health`
+## Next follow-up PR
+
+- Add TTS-aligned expression timing sync.
+- Add LLM-driven intent-to-emotion orchestration.
+- Expand combo planner for richer base+overlay blends.
 
 ## Environment variables
-
-Copy and adjust env values:
 
 ```bash
 cp .env.example .env
 ```
 
-Controller reads `.env` from repo root by default.
-Overlay can use `VITE_CONTROLLER_PORT` and `VITE_WS_PATH` (defaults to `/ws`).
-
-## OBS Browser Source setup
-
-1. In OBS, add a new **Browser Source**.
-2. Set URL to `http://localhost:5173`.
-3. Set Width/Height to your stream resolution (e.g. `1920x1080`).
-4. Enable **Shutdown source when not visible** = OFF (recommended).
-5. Enable **Refresh browser when scene becomes active** = ON (optional, useful during dev).
-6. Ensure source background is transparent (overlay is styled for transparency).
-
-## Example curl commands
-
-```bash
-curl -X POST http://localhost:8787/api/subtitle \
-  -H "Content-Type: application/json" \
-  -d '{"text":"Hello stream!", "characterName":"Nova"}'
-
-curl -X POST http://localhost:8787/api/speaking \
-  -H "Content-Type: application/json" \
-  -d '{"speaking":true}'
-
-curl -X POST http://localhost:8787/api/emotion \
-  -H "Content-Type: application/json" \
-  -d '{"emotion":"happy"}'
-
-curl -X POST http://localhost:8787/api/status \
-  -H "Content-Type: application/json" \
-  -d '{"status":"Live and monitoring chat"}'
-
-curl -X POST http://localhost:8787/api/test-sequence \
-  -H "Content-Type: application/json" \
-  -d '{}'
-```
-
-## Notes for next phase
-
-- Add real LLM-driven response orchestration.
-- Add TTS output pipeline.
-- Add Twitch chat ingestion.
-- Add screenshot/screen-analysis event ingestion.
-- Implement real VTube Studio WebSocket auth + expression/hotkey triggers.
-- Add scene automation and richer timeline sequencing.
+- `CONTROLLER_PORT` (default `8787`)
+- `WS_PATH` (default `/ws`)
+- `CORS_ORIGIN` (default `*`)
+- `VTS_WS_URL` (default `ws://127.0.0.1:8001`)
+- `VTS_PLUGIN_NAME`
+- `VTS_PLUGIN_DEVELOPER`

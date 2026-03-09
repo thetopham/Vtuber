@@ -1,14 +1,18 @@
 import cors from "cors";
 import express from "express";
 import http from "node:http";
+import { z } from "zod";
 import {
   eventSchemas,
   makeEvent,
   parseEvent,
   type EventName,
   type EventPayloadMap,
+  type InternalEmotion,
   type OverlayEvent,
-  type OverlayState
+  type OverlayState,
+  avatarExpressionStateSchema,
+  internalEmotionSchema
 } from "@vtuber/shared";
 import { WebSocketServer } from "ws";
 import { EventBus } from "./eventBus";
@@ -20,12 +24,19 @@ const app = express();
 const server = http.createServer(app);
 const wsServer = new WebSocketServer({ server, path: env.wsPath });
 const eventBus = new EventBus();
-const vtubeStudio = new VTubeStudioService();
+const vtubeStudio = new VTubeStudioService(
+  env.vtsWsUrl,
+  env.vtsPluginName,
+  env.vtsPluginDeveloper
+);
 
 let currentState: OverlayState = createInitialState();
 
 app.use(cors({ origin: env.corsOrigin }));
 app.use(express.json());
+
+const emotionRequestSchema = z.object({ emotion: internalEmotionSchema });
+const expressionRequestSchema = avatarExpressionStateSchema;
 
 function logEvent<T extends EventName>(type: T, payload: EventPayloadMap[T]): void {
   console.info(`[event] ${type}`, payload);
@@ -46,22 +57,19 @@ function publish<T extends EventName>(type: T, payload: EventPayloadMap[T]): voi
   broadcast(makeEvent(type, payload));
 }
 
-eventBus.on("subtitle.set", async ({ text, characterName }) => {
+eventBus.on("subtitle.set", ({ text, characterName }) => {
   currentState = patchState(currentState, {
     subtitle: text,
     ...(characterName ? { characterName } : {})
   });
-  await vtubeStudio.syncState(currentState);
 });
 
-eventBus.on("speaking.set", async ({ speaking }) => {
+eventBus.on("speaking.set", ({ speaking }) => {
   currentState = patchState(currentState, { speaking });
-  await vtubeStudio.setSpeaking(speaking);
 });
 
-eventBus.on("emotion.set", async ({ emotion }) => {
+eventBus.on("emotion.set", ({ emotion }) => {
   currentState = patchState(currentState, { emotion });
-  await vtubeStudio.setEmotion(emotion);
 });
 
 eventBus.on("status.set", ({ status }) => {
@@ -81,10 +89,7 @@ wsServer.on("connection", (socket) => {
   });
 });
 
-function bindValidatedRoute<T extends EventName>(
-  path: string,
-  type: T
-): void {
+function bindValidatedRoute<T extends EventName>(path: string, type: T): void {
   app.post(path, (req, res) => {
     const result = eventSchemas[type].safeParse(req.body);
 
@@ -102,71 +107,68 @@ function bindValidatedRoute<T extends EventName>(
 
 bindValidatedRoute("/api/subtitle", "subtitle.set");
 bindValidatedRoute("/api/speaking", "speaking.set");
-bindValidatedRoute("/api/emotion", "emotion.set");
 bindValidatedRoute("/api/status", "status.set");
 
-app.post("/api/test-sequence", async (_req, res) => {
-  const steps: Array<{ delay: number; type: EventName; payload: unknown }> = [
-    {
-      delay: 0,
-      type: "status.set",
-      payload: { status: "Running demo sequence" }
-    },
-    {
-      delay: 300,
-      type: "subtitle.set",
-      payload: { text: "Hello chat, I am online.", characterName: "Nova" }
-    },
-    {
-      delay: 700,
-      type: "speaking.set",
-      payload: { speaking: true }
-    },
-    {
-      delay: 1300,
-      type: "emotion.set",
-      payload: { emotion: "happy" }
-    },
-    {
-      delay: 2400,
-      type: "subtitle.set",
-      payload: { text: "Let me think about our next play..." }
-    },
-    {
-      delay: 3100,
-      type: "emotion.set",
-      payload: { emotion: "thinking" }
-    },
-    {
-      delay: 4200,
-      type: "emotion.set",
-      payload: { emotion: "surprised" }
-    },
-    {
-      delay: 4700,
-      type: "subtitle.set",
-      payload: { text: "Wow! That was unexpected.", characterName: "Nova" }
-    },
-    {
-      delay: 5600,
-      type: "speaking.set",
-      payload: { speaking: false }
-    },
-    {
-      delay: 6000,
-      type: "status.set",
-      payload: { status: "Demo sequence complete" }
-    }
+app.post("/api/avatar/emotion", async (req, res) => {
+  const parsed = emotionRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid payload", details: parsed.error.flatten() });
+  }
+
+  const expressionState = await vtubeStudio.applyEmotion(parsed.data.emotion);
+  const emotionForOverlay = parsed.data.emotion as InternalEmotion;
+  publish("emotion.set", { emotion: emotionForOverlay });
+
+  return res.json({ ok: true, expressionState, state: currentState });
+});
+
+app.post("/api/avatar/expression", async (req, res) => {
+  const parsed = expressionRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid payload", details: parsed.error.flatten() });
+  }
+
+  const expressionState = await vtubeStudio.applyExpressionState(parsed.data);
+  return res.json({ ok: true, expressionState, state: currentState });
+});
+
+app.post("/api/avatar/test-cycle", (_req, res) => {
+  const cycle: InternalEmotion[] = [
+    "neutral",
+    "angry",
+    "pouting",
+    "embarrassed",
+    "excited",
+    "happy",
+    "sad",
+    "shocked",
+    "wink"
   ];
 
-  steps.forEach(({ delay, type, payload }) => {
-    setTimeout(() => {
-      const validated = parseEvent(type, payload);
-      publish(type, validated);
-    }, delay);
+  cycle.forEach((emotion, index) => {
+    setTimeout(async () => {
+      const expressionState = await vtubeStudio.applyEmotion(emotion);
+      publish("emotion.set", { emotion });
+      console.info("[avatar] test-cycle step", { emotion, expressionState });
+    }, index * 1800);
   });
 
-  return res.json({ ok: true, message: "Demo sequence started" });
+  return res.json({ ok: true, message: "Avatar cycle started", cycle });
+});
+
+app.get("/api/avatar/status", (_req, res) => {
+  res.json({ ok: true, avatar: vtubeStudio.getStatus(), state: currentState });
+});
+
+app.post("/api/emotion", async (req, res) => {
+  const result = eventSchemas["emotion.set"].safeParse(req.body);
+  if (!result.success) {
+    return res.status(400).json({ error: "Invalid payload", details: result.error.flatten() });
+  }
+
+  await vtubeStudio.applyEmotion(result.data.emotion);
+  publish("emotion.set", parseEvent("emotion.set", result.data));
+  return res.json({ ok: true, state: currentState });
 });
 
 app.get("/health", (_req, res) => {
