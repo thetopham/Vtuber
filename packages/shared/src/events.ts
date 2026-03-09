@@ -22,13 +22,23 @@ export const sceneSetSchema = z.object({
   scene: z.string().min(1).max(120)
 });
 
+export const stateSetSchema = z.object({
+  state: z.enum(["idle", "listening", "speaking"])
+});
+
 export const overlayStateSchema = z.object({
   characterName: z.string().min(1).max(48),
   subtitle: z.string().min(1).max(300),
   speaking: z.boolean(),
   emotion: z.enum(EMOTIONS),
   status: z.string().min(1).max(120),
-  scene: z.string().min(1).max(120)
+  scene: z.string().min(1).max(120),
+  state: z.enum(["idle", "listening", "speaking"])
+});
+
+export const speechLifecycleSchema = z.object({
+  text: z.string().min(1).max(400),
+  emotion: z.enum(EMOTIONS)
 });
 
 export const eventSchemas = {
@@ -37,6 +47,9 @@ export const eventSchemas = {
   "emotion.set": emotionSetSchema,
   "status.set": statusSetSchema,
   "scene.set": sceneSetSchema,
+  "state.set": stateSetSchema,
+  "speech.started": speechLifecycleSchema,
+  "speech.finished": speechLifecycleSchema,
   "state.sync": overlayStateSchema
 } as const;
 
@@ -47,7 +60,9 @@ export type SpeakingSetPayload = z.infer<typeof speakingSetSchema>;
 export type EmotionSetPayload = z.infer<typeof emotionSetSchema>;
 export type StatusSetPayload = z.infer<typeof statusSetSchema>;
 export type SceneSetPayload = z.infer<typeof sceneSetSchema>;
+export type StateSetPayload = z.infer<typeof stateSetSchema>;
 export type OverlayState = z.infer<typeof overlayStateSchema>;
+export type SpeechLifecyclePayload = z.infer<typeof speechLifecycleSchema>;
 
 export type EventPayloadMap = {
   "subtitle.set": SubtitleSetPayload;
@@ -55,6 +70,9 @@ export type EventPayloadMap = {
   "emotion.set": EmotionSetPayload;
   "status.set": StatusSetPayload;
   "scene.set": SceneSetPayload;
+  "state.set": StateSetPayload;
+  "speech.started": SpeechLifecyclePayload;
+  "speech.finished": SpeechLifecyclePayload;
   "state.sync": OverlayState;
 };
 

@@ -12,109 +12,103 @@ A TypeScript monorepo MVP with OBS overlay and controller APIs.
   /shared       Shared event schema/types/constants/config
 ```
 
-## VTube Studio expression control (this PR)
+## Minimal TTS performance loop (this PR)
 
-This repo now includes a focused v1 expression system:
-- Internal emotion input normalization.
-- Emotion-to-expression mapping.
-- VTube Studio WebSocket adapter with auth + hotkey triggering.
-- Test endpoints for quick expression validation.
+This PR adds a narrow first-pass speech pipeline in `apps/controller`:
+- Speech provider abstraction.
+- OpenAI TTS provider implementation.
+- Local audio playback service (Windows-first, default output device).
+- Performance loop that sequences emotion → subtitle → speaking/state flags → audio playback → reset.
 
-### Enable VTube Studio API
+The existing VTube Studio expression flow is reused and not rewritten.
 
-1. Open **VTube Studio**.
-2. Go to **Settings → General → Allow Plugin API access** (wording may vary by version).
-3. Confirm WebSocket API is listening (default `ws://127.0.0.1:8001`).
-4. On first controller connect, approve the plugin prompt in VTube Studio.
+## Required environment variables
 
-### Create model hotkeys
+Copy `.env.example` to `.env` and set at least:
 
-Create hotkeys in VTube Studio for these model expressions:
-- `happy` (default/reset)
-- `angry`
-- `approval` (used internally as pouting)
-- `excited`
-- `sad`
-- `shocked`
-- `embarrassed`
-- `wink`
+```bash
+OPENAI_API_KEY=your_key_here
+OPENAI_TTS_MODEL=gpt-4o-mini-tts
+OPENAI_TTS_VOICE=alloy
+```
 
-Set matching IDs in `.env` (`VTS_HOTKEY_*`).
-
-### Internal emotion mapping
-
-| Internal emotion | VTS base | Overlays |
-|---|---|---|
-| neutral | happy | none |
-| happy | happy | none |
-| angry | angry | none |
-| pouting | approval | none |
-| embarrassed | happy | embarrassed |
-| excited | excited | none |
-| sad | sad | none |
-| shocked | shocked | none |
-| wink | happy | wink |
-
-Rules:
-- One base expression at a time.
-- v1 overlays allowed: `embarrassed`, `wink`.
-- Allowed base+overlay combos: `happy+embarrassed`, `happy+wink`, `excited+embarrassed`, `shocked+embarrassed`.
-- Reset behavior before apply: clear all → apply `happy` → apply target base/overlays.
-
-Auto-clear timing:
-- `wink`: ~1000ms
-- `embarrassed`: ~3000ms
-- `shocked` (optional simple behavior): ~2500ms back to happy
+You still need the existing VTube Studio + controller vars (`VTS_*`, `CONTROLLER_PORT`, etc.).
 
 ## API endpoints
 
-### Existing overlay endpoints
+### Overlay/state endpoints
 - `POST /api/subtitle`
 - `POST /api/speaking`
 - `POST /api/status`
+- `POST /api/state`
 
-### New avatar endpoints
+### Avatar endpoints
 - `POST /api/avatar/emotion`
 - `POST /api/avatar/expression`
 - `POST /api/avatar/test-cycle`
 - `GET /api/avatar/status`
 
+### Speech endpoints
+- `POST /api/speak`
+- `POST /api/test/speak`
+- `GET /api/speech/status`
+
 ## Example curl commands
 
 ```bash
-curl -X POST http://localhost:8787/api/avatar/emotion \
+# 1) Speak an arbitrary line with requested emotion
+curl -X POST http://localhost:8787/api/speak \
   -H "Content-Type: application/json" \
-  -d '{"emotion":"embarrassed"}'
+  -d '{"text":"Wow! That was unexpected.","emotion":"shocked"}'
 
-curl -X POST http://localhost:8787/api/avatar/expression \
-  -H "Content-Type: application/json" \
-  -d '{"base":"happy","overlays":["wink"]}'
-
-curl -X POST http://localhost:8787/api/avatar/test-cycle \
+# 2) Run canned speech test line
+curl -X POST http://localhost:8787/api/test/speak \
   -H "Content-Type: application/json" \
   -d '{}'
 
-curl http://localhost:8787/api/avatar/status
+# 3) Inspect speech debug status
+curl http://localhost:8787/api/speech/status
 ```
+
+## How to verify subtitle + speaking + avatar sync
+
+1. Start VTube Studio and ensure plugin/API auth is working.
+2. Start controller + overlay (`npm run dev`).
+3. Call `/api/speak` with text and emotion.
+4. Confirm in overlay:
+   - subtitle updates to your line,
+   - speaking indicator becomes active during playback,
+   - speaking indicator clears when playback ends.
+5. Confirm avatar expression updates to requested emotion before audio plays.
+6. Confirm `/api/speech/status` reports useful debug state (`isPlaying`, last text/emotion, controller state).
+
+## Windows local playback note
+
+On Windows, playback uses PowerShell + .NET `System.Windows.Media.MediaPlayer` and plays audio through the default system output device. No external routing tools are required in this PR.
 
 ## What to test first
 
-1. Start VTube Studio with API enabled and model loaded.
-2. Start controller (`npm run dev`).
-3. Check `/api/avatar/status` returns connected/authenticated.
-4. Trigger `/api/avatar/emotion` with `pouting`, `embarrassed`, and `wink`.
-5. Trigger `/api/avatar/test-cycle` and verify transitions + auto-clear timings.
+1. `POST /api/test/speak` (quick sanity test).
+2. `GET /api/speech/status` before and after test.
+3. `POST /api/speak` with a few emotions (`happy`, `sad`, `shocked`) and verify expression + subtitle + speaking timing.
+
+## Known assumptions
+
+- This version is intentionally synchronous and single-flight: one speech request at a time.
+- Audio is synthesized as WAV via OpenAI speech API and played after full file generation (no streaming yet).
+- Temp files are created for playback and cleaned up after playback.
 
 ## Next follow-up PR
 
-- Add TTS-aligned expression timing.
-- Add LLM orchestration that outputs structured emotion/expression intent.
-- Expand combo planning and transition smoothing.
-- Add richer state introspection for debugging timeline playback.
+- Add a queued speech scheduler instead of single-flight rejection.
+- Add configurable post-speech resting emotion behavior.
+- Add optional richer timeline events (durations/latency) for debugging.
 
 ## Non-goals in this PR
 
-- No TTS pipeline.
-- No OpenAI/LLM integration.
+- No LLM orchestration.
 - No Twitch chat ingestion.
-- No screen capture or scene automation.
+- No screenshot/screen-analysis ingestion.
+- No scene automation or persistence.
+- No voice input / speech-to-text.
+- No realtime streaming audio.

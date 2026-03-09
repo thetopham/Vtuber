@@ -6,6 +6,8 @@ import {
   expressionInputSchema,
   makeEvent,
   parseEvent,
+  speechRequestSchema,
+  speechStatusSchema,
   type EventName,
   type EventPayloadMap,
   type OverlayEvent,
@@ -17,6 +19,9 @@ import { VTubeStudioAdapter } from "./adapters/VTubeStudioAdapter";
 import { EventBus } from "./eventBus";
 import { env } from "./env";
 import { ExpressionEngine } from "./services/ExpressionEngine";
+import { AudioPlaybackService } from "./services/AudioPlaybackService";
+import { OpenAISpeechProvider } from "./services/OpenAISpeechProvider";
+import { PerformanceLoop } from "./services/PerformanceLoop";
 import { VTubeStudioClient } from "./services/vtubeStudio";
 import { createInitialState, patchState } from "./state";
 
@@ -38,8 +43,18 @@ const avatarAdapter = new VTubeStudioAdapter({
 });
 
 const expressionEngine = new ExpressionEngine(avatarAdapter);
+const speechProvider = new OpenAISpeechProvider();
+const audioPlaybackService = new AudioPlaybackService();
 
 let currentState: OverlayState = createInitialState();
+
+const performanceLoop = new PerformanceLoop({
+  expressionEngine,
+  speechProvider,
+  audioPlaybackService,
+  publish,
+  getControllerStatus: () => currentState.state
+});
 
 app.use(cors({ origin: env.corsOrigin }));
 app.use(express.json());
@@ -86,6 +101,10 @@ eventBus.on("scene.set", ({ scene }) => {
   currentState = patchState(currentState, { scene });
 });
 
+eventBus.on("state.set", ({ state }) => {
+  currentState = patchState(currentState, { state });
+});
+
 wsServer.on("connection", (socket) => {
   console.info("[ws] overlay connected");
   socket.send(JSON.stringify(makeEvent("state.sync", currentState)));
@@ -110,6 +129,7 @@ function bindValidatedRoute<T extends EventName>(path: string, type: T): void {
 bindValidatedRoute("/api/subtitle", "subtitle.set");
 bindValidatedRoute("/api/speaking", "speaking.set");
 bindValidatedRoute("/api/status", "status.set");
+bindValidatedRoute("/api/state", "state.set");
 
 app.post("/api/avatar/emotion", async (req, res) => {
   const parsed = emotionInputSchema.safeParse(req.body);
@@ -193,6 +213,45 @@ app.post("/api/test-sequence", async (_req, res) => {
   });
 
   return res.json({ ok: true, message: "Demo sequence started" });
+});
+
+
+app.post("/api/speak", async (req, res) => {
+  const parsed = speechRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  try {
+    await performanceLoop.performLine(parsed.data);
+    return res.json({ ok: true, speech: performanceLoop.getStatus() });
+  } catch (error) {
+    const message = (error as Error).message;
+    const statusCode = message.includes("already in progress") ? 409 : 500;
+    return res.status(statusCode).json({ ok: false, error: message });
+  }
+});
+
+app.post("/api/test/speak", async (_req, res) => {
+  const testLine = {
+    text: "System online. Voice test successful.",
+    emotion: "happy" as const
+  };
+
+  try {
+    await performanceLoop.performLine(testLine);
+    return res.json({ ok: true, speech: performanceLoop.getStatus(), testLine });
+  } catch (error) {
+    const message = (error as Error).message;
+    const statusCode = message.includes("already in progress") ? 409 : 500;
+    return res.status(statusCode).json({ ok: false, error: message });
+  }
+});
+
+app.get("/api/speech/status", (_req, res) => {
+  const status = performanceLoop.getStatus();
+  const validatedStatus = speechStatusSchema.parse(status);
+  return res.json({ ok: true, speech: validatedStatus, state: currentState });
 });
 
 app.get("/health", (_req, res) => {

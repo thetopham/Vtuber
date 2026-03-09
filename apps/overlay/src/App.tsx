@@ -87,6 +87,7 @@ export function App() {
           <h2>Debug Panel</h2>
           <p>Scene: {overlayState.scene}</p>
           <p>Status: {overlayState.status}</p>
+          <p>State: {overlayState.state}</p>
           <p>WS: {wsUrl}</p>
           <pre>{JSON.stringify(lastEvent, null, 2)}</pre>
         </aside>
@@ -147,6 +148,14 @@ function applyEventToState(
           ...prev,
           scene: event.payload.scene
         };
+      case "state.set":
+        return {
+          ...prev,
+          state: event.payload.state
+        };
+      case "speech.started":
+      case "speech.finished":
+        return prev;
       default:
         return prev;
     }
