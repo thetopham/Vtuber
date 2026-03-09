@@ -2,7 +2,8 @@ import cors from "cors";
 import express from "express";
 import http from "node:http";
 import {
-  eventSchemas,
+  emotionInputSchema,
+  expressionInputSchema,
   makeEvent,
   parseEvent,
   type EventName,
@@ -11,16 +12,32 @@ import {
   type OverlayState
 } from "@vtuber/shared";
 import { WebSocketServer } from "ws";
+import { z } from "zod";
+import { VTubeStudioAdapter } from "./adapters/VTubeStudioAdapter";
 import { EventBus } from "./eventBus";
 import { env } from "./env";
-import { VTubeStudioService } from "./services/vtubeStudio";
+import { ExpressionEngine } from "./services/ExpressionEngine";
+import { VTubeStudioClient } from "./services/vtubeStudio";
 import { createInitialState, patchState } from "./state";
 
 const app = express();
 const server = http.createServer(app);
 const wsServer = new WebSocketServer({ server, path: env.wsPath });
 const eventBus = new EventBus();
-const vtubeStudio = new VTubeStudioService();
+
+const vtubeStudioClient = new VTubeStudioClient({
+  url: env.vtsUrl,
+  pluginName: env.vtsPluginName,
+  pluginDeveloper: env.vtsPluginDeveloper,
+  authToken: env.vtsAuthToken
+});
+
+const avatarAdapter = new VTubeStudioAdapter({
+  client: vtubeStudioClient,
+  hotkeys: env.hotkeys
+});
+
+const expressionEngine = new ExpressionEngine(avatarAdapter);
 
 let currentState: OverlayState = createInitialState();
 
@@ -51,17 +68,14 @@ eventBus.on("subtitle.set", async ({ text, characterName }) => {
     subtitle: text,
     ...(characterName ? { characterName } : {})
   });
-  await vtubeStudio.syncState(currentState);
 });
 
 eventBus.on("speaking.set", async ({ speaking }) => {
   currentState = patchState(currentState, { speaking });
-  await vtubeStudio.setSpeaking(speaking);
 });
 
-eventBus.on("emotion.set", async ({ emotion }) => {
+eventBus.on("emotion.set", ({ emotion }) => {
   currentState = patchState(currentState, { emotion });
-  await vtubeStudio.setEmotion(emotion);
 });
 
 eventBus.on("status.set", ({ status }) => {
@@ -81,82 +95,90 @@ wsServer.on("connection", (socket) => {
   });
 });
 
-function bindValidatedRoute<T extends EventName>(
-  path: string,
-  type: T
-): void {
+function bindValidatedRoute<T extends EventName>(path: string, type: T): void {
   app.post(path, (req, res) => {
-    const result = eventSchemas[type].safeParse(req.body);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: "Invalid payload",
-        details: result.error.flatten()
-      });
+    try {
+      const result = parseEvent(type, req.body);
+      publish(type, result);
+      return res.json({ ok: true, state: currentState });
+    } catch (error) {
+      return res.status(400).json({ ok: false, error: (error as Error).message });
     }
-
-    publish(type, parseEvent(type, result.data));
-    return res.json({ ok: true, state: currentState });
   });
 }
 
 bindValidatedRoute("/api/subtitle", "subtitle.set");
 bindValidatedRoute("/api/speaking", "speaking.set");
-bindValidatedRoute("/api/emotion", "emotion.set");
 bindValidatedRoute("/api/status", "status.set");
+
+app.post("/api/avatar/emotion", async (req, res) => {
+  const parsed = emotionInputSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const normalized = expressionEngine.normalizeEmotionInput(parsed.data.emotion);
+  const state = expressionEngine.buildExpressionState(normalized);
+  const applied = await expressionEngine.applyExpressionState(state);
+  publish("emotion.set", { emotion: normalized });
+
+  return res.json({ ok: true, emotion: normalized, expressionState: applied });
+});
+
+app.post("/api/avatar/expression", async (req, res) => {
+  const parsed = expressionInputSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  try {
+    const applied = await expressionEngine.applyExpressionState(parsed.data);
+    return res.json({ ok: true, expressionState: applied });
+  } catch (error) {
+    return res.status(400).json({ ok: false, error: (error as Error).message });
+  }
+});
+
+app.post("/api/avatar/test-cycle", async (_req, res) => {
+  const cycle = [
+    "neutral",
+    "angry",
+    "pouting",
+    "embarrassed",
+    "excited",
+    "happy",
+    "sad",
+    "shocked",
+    "wink"
+  ] as const;
+
+  cycle.forEach((emotion, index) => {
+    setTimeout(async () => {
+      const state = expressionEngine.buildExpressionState(emotion);
+      await expressionEngine.applyExpressionState(state);
+      console.info("[avatar.test-cycle] applied", { emotion, index });
+    }, index * 1600);
+  });
+
+  return res.json({ ok: true, message: "Avatar expression cycle started", cycle });
+});
+
+app.get("/api/avatar/status", (_req, res) => {
+  return res.json({
+    ok: true,
+    adapter: avatarAdapter.getStatus(),
+    expressionState: expressionEngine.getCurrentState()
+  });
+});
 
 app.post("/api/test-sequence", async (_req, res) => {
   const steps: Array<{ delay: number; type: EventName; payload: unknown }> = [
-    {
-      delay: 0,
-      type: "status.set",
-      payload: { status: "Running demo sequence" }
-    },
-    {
-      delay: 300,
-      type: "subtitle.set",
-      payload: { text: "Hello chat, I am online.", characterName: "Nova" }
-    },
-    {
-      delay: 700,
-      type: "speaking.set",
-      payload: { speaking: true }
-    },
-    {
-      delay: 1300,
-      type: "emotion.set",
-      payload: { emotion: "happy" }
-    },
-    {
-      delay: 2400,
-      type: "subtitle.set",
-      payload: { text: "Let me think about our next play..." }
-    },
-    {
-      delay: 3100,
-      type: "emotion.set",
-      payload: { emotion: "thinking" }
-    },
-    {
-      delay: 4200,
-      type: "emotion.set",
-      payload: { emotion: "surprised" }
-    },
-    {
-      delay: 4700,
-      type: "subtitle.set",
-      payload: { text: "Wow! That was unexpected.", characterName: "Nova" }
-    },
-    {
-      delay: 5600,
-      type: "speaking.set",
-      payload: { speaking: false }
-    },
-    {
-      delay: 6000,
-      type: "status.set",
-      payload: { status: "Demo sequence complete" }
-    }
+    { delay: 0, type: "status.set", payload: { status: "Running demo sequence" } },
+    { delay: 300, type: "subtitle.set", payload: { text: "Hello chat, I am online.", characterName: "Nova" } },
+    { delay: 700, type: "speaking.set", payload: { speaking: true } },
+    { delay: 1300, type: "subtitle.set", payload: { text: "Expression test in progress..." } },
+    { delay: 2200, type: "speaking.set", payload: { speaking: false } },
+    { delay: 3000, type: "status.set", payload: { status: "Demo sequence complete" } }
   ];
 
   steps.forEach(({ delay, type, payload }) => {
@@ -173,8 +195,17 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, state: currentState });
 });
 
+app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (error instanceof z.ZodError) {
+    return res.status(400).json({ error: "Invalid payload", details: error.flatten() });
+  }
+
+  console.error("[controller] unhandled error", error);
+  return res.status(500).json({ error: "Internal server error" });
+});
+
 server.listen(env.port, async () => {
   console.info(`Controller listening on http://localhost:${env.port}`);
   console.info(`WebSocket endpoint ws://localhost:${env.port}${env.wsPath}`);
-  await vtubeStudio.connect();
+  await avatarAdapter.connect();
 });
