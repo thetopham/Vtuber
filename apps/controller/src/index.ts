@@ -302,6 +302,11 @@ app.post("/api/respond", async (req, res) => {
     const intent = await responseOrchestrator.generateIntent(parsed.data);
     let triggeredSpeaking = false;
 
+    const aiSubtitle = intent.spokenText.trim();
+    if (aiSubtitle.length > 0) {
+      publish("subtitle.set", { text: aiSubtitle });
+    }
+
     if (intent.shouldSpeak) {
       await performanceLoop.performLine({
         text: intent.spokenText,
