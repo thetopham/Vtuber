@@ -52,6 +52,7 @@ export function buildSystemPrompt(persona: PersonaConfig): string {
     "Guidelines:",
     "- Keep compatibility emotion field filled with one allowed emotion label.",
     "- Also provide expressionState.active as a list of toggles to activate.",
+    "- When expressionState is present, include expressionState.durationMs as a positive integer for how long to hold the expression.",
     "- You may combine multiple toggles when the look should blend.",
     "- Use neutral alone for idle/listening/low intensity.",
     "- Never include neutral with other toggles.",
