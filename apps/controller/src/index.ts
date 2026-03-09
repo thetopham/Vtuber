@@ -164,10 +164,14 @@ app.post("/api/avatar/test-cycle", async (_req, res) => {
 });
 
 app.get("/api/avatar/status", (_req, res) => {
+  const adapterStatus = avatarAdapter.getStatus();
+
   return res.json({
     ok: true,
-    adapter: avatarAdapter.getStatus(),
-    expressionState: expressionEngine.getCurrentState()
+    desiredExpressionState: expressionEngine.getCurrentState(),
+    actualActiveToggleState: adapterStatus.activeToggleState,
+    lastTransitionPlan: adapterStatus.lastTransitionPlan,
+    adapter: adapterStatus
   });
 });
 
