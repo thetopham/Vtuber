@@ -1,163 +1,84 @@
-# AI VTuber Controller MVP (Local-first)
+# AI VTuber Controller (Multi-Performer v1)
 
-A TypeScript monorepo MVP with OBS overlay and controller APIs.
+This monorepo now supports **two AI VTubers** (`nova`, `echo`) with a shared director that can run autonomous banter and handle interrupts.
 
-## Monorepo structure
+## Architecture
 
-```text
-/apps
-  /overlay      React overlay UI rendered in OBS Browser Source
-  /controller   Express + WebSocket controller service
-/packages
-  /shared       Shared event schema/types/constants/config
-```
+- AI still returns strict structured `PerformanceIntent` (validated).
+- Controller + performance loop executes intent.
+- AI still does **not** trigger raw hotkeys or raw overlay events directly.
+- Each performer owns:
+  - persona config
+  - `VTubeStudioClient` / `VTubeStudioAdapter`
+  - `ExpressionEngine`
+  - `PerformanceLoop`
+  - `ResponseOrchestrator`
+- `ConversationDirector` manages:
+  - turn-taking
+  - autonomous banter loop
+  - chat/operator interruption
+  - global single-speaker lock (v1: one performer speaks at a time)
 
-## AI emotion selection (safe structured intent)
+## New endpoints
 
-This PR keeps the architecture narrow and deterministic:
-- AI returns a structured `PerformanceIntent`.
-- AI chooses **one internal emotion label only**.
-- Controller executes via the existing performance loop.
-- Existing expression engine remains source-of-truth for mapping emotion to avatar expressions/toggles.
-- AI does not directly control raw VTube Studio hotkeys/toggles.
+### Performer endpoints
+- `GET /api/performers`
+- `GET /api/performers/:id/status`
+- `GET /api/performers/:id/persona`
+- `POST /api/performers/:id/persona`
+- `POST /api/performers/:id/respond`
+- `POST /api/performers/:id/respond-only`
 
-## Required environment variables
+### Director endpoints
+- `GET /api/director/status`
+- `POST /api/director/banter/start`
+- `POST /api/director/banter/stop`
+- `POST /api/director/chat`
+- `POST /api/director/operator`
 
-Copy `.env.example` to `.env` and set at least:
+## Backward compatibility
+
+These routes still work and map to default performer (`nova`):
+- `POST /api/respond`
+- `POST /api/respond-only`
+- `GET /api/ai/status`
+- `GET /api/persona`
+- `POST /api/persona`
+
+Legacy overlay consumers still receive compatible state via `state.sync.legacy` while new multi-performer state is included in `state.sync`.
+
+## Environment
+
+Copy `.env.example` to `.env`.
+
+### New multi-performer VTube Studio config
 
 ```bash
-OPENAI_API_KEY=your_key_here
-OPENAI_MODEL=gpt-4.1-mini
-OPENAI_TTS_MODEL=gpt-4o-mini-tts
-OPENAI_TTS_VOICE=alloy
+VTS_NOVA_WS_URL=ws://127.0.0.1:8001
+VTS_NOVA_AUTH_TOKEN=
+VTS_NOVA_HOTKEY_HAPPY=happy
+...
+
+VTS_ECHO_WS_URL=ws://127.0.0.1:8002
+VTS_ECHO_AUTH_TOKEN=
+VTS_ECHO_HOTKEY_HAPPY=happy
+...
 ```
 
-You still need the existing VTube Studio + controller vars (`VTS_*`, `CONTROLLER_PORT`, etc.).
+If performer-specific vars are missing, controller falls back to existing single-performer `VTS_*` vars.
 
-## `PerformanceIntent` contract
+## Banter behavior (v1)
 
-The orchestrator requests and validates this shape:
+- `POST /api/director/banter/start` starts an async banter loop.
+- Loop alternates speakers and can run indefinitely.
+- `POST /api/director/chat` and `/api/director/operator` interrupt quickly and preempt turns.
+- `POST /api/director/banter/stop` ends loop gracefully.
+- If a generated intent has `shouldSpeak=false`, director swaps turn and continues (no deadlock).
 
-```ts
-type PerformanceIntent = {
-  shouldSpeak: boolean;
-  spokenText: string;
-  emotion:
-    | "neutral"
-    | "happy"
-    | "angry"
-    | "pouting"
-    | "embarrassed"
-    | "excited"
-    | "sad"
-    | "shocked"
-    | "wink";
-  notes?: string;
-};
+## Local run
+
+```bash
+npm install
+npm run -w @vtuber/controller dev
+npm run -w @vtuber/overlay dev
 ```
-
-Validation is done with strict Zod schemas (`.strict()`, no extra keys).
-
-## Allowed AI emotion labels
-
-- `neutral`
-- `happy`
-- `angry`
-- `pouting`
-- `embarrassed`
-- `excited`
-- `sad`
-- `shocked`
-- `wink`
-
-## Emotion mapping in avatar pipeline
-
-1. `/api/respond-only` or `/api/respond` asks AI for `PerformanceIntent`.
-2. Controller validates intent; invalid model output falls back to `neutral` emotion safely.
-3. `/api/respond` sends `spokenText` + `emotion` into `PerformanceLoop.performLine`.
-4. `PerformanceLoop` calls `ExpressionEngine.buildExpressionState(emotion)` and applies it.
-5. Existing avatar adapter and hotkey mapping stay unchanged.
-
-## API endpoints
-
-### AI orchestration endpoints
-- `POST /api/respond-only`
-  - Generates and validates `PerformanceIntent`.
-  - Returns intent only (no TTS, no avatar/overlay updates).
-- `POST /api/respond`
-  - Generates and validates `PerformanceIntent`.
-  - If `shouldSpeak === true`, executes existing speak/performance loop.
-- `GET /api/ai/status`
-  - Returns in-memory AI debug status:
-    - `lastIntent`
-    - `lastEmotion`
-    - validation success/error
-    - fallback usage
-    - whether last `/api/respond` triggered speaking
-    - last raw model payload text
-
-### Existing endpoints (unchanged)
-- Overlay/state: `POST /api/subtitle`, `POST /api/speaking`, `POST /api/status`, `POST /api/state`
-- Avatar: `POST /api/avatar/emotion`, `POST /api/avatar/expression`, `POST /api/avatar/test-cycle`, `GET /api/avatar/status`
-- Speech: `POST /api/speak`, `POST /api/test/speak`, `GET /api/speech/status`
-- Persona: `GET /api/persona`, `POST /api/persona`, `GET /api/personas`, `POST /api/personas`, `POST /api/personas/load`
-
-## PowerShell examples
-
-```powershell
-Invoke-RestMethod -Method POST http://localhost:8787/api/respond-only `
-  -ContentType "application/json" `
-  -Body '{"inputType":"manual","text":"Say something surprised ."}'
-
-Invoke-RestMethod -Method POST http://localhost:8787/api/respond-only `
-  -ContentType "application/json" `
-  -Body '{"inputType":"manual","text":"Say something playful and slightly embarrassed."}'
-
-Invoke-RestMethod -Method POST http://localhost:8787/api/respond-only `
-  -ContentType "application/json" `
-  -Body '{"inputType":"manual","text":"Say something hyped after a big win."}'
-
-Invoke-RestMethod -Method POST http://localhost:8787/api/respond-only `
-  -ContentType "application/json" `
-  -Body '{"inputType":"manual","text":"Say something surprised about barely surviving."}'
-
-Invoke-RestMethod -Method POST http://localhost:8787/api/respond `
-  -ContentType "application/json" `
-  -Body '{"inputType":"manual","text":"Say something playful and slightly embarrassed."}'
-
-Invoke-RestMethod -Method GET http://localhost:8787/api/ai/status
-```
-
-## Safe fallback behavior
-
-- If model output fails validation, controller uses fallback intent with `emotion: "neutral"`.
-- Fallback preserves safety and keeps execution deterministic.
-- AI status endpoint reports whether fallback was used.
-
-## What to test first
-
-1. `POST /api/respond-only` with manual prompts and verify returned intent always uses an allowed emotion.
-2. `POST /api/respond` and confirm subtitle + speaking-state + TTS + expression all run through existing loop.
-3. `GET /api/ai/status` and verify validation and fallback fields update as expected.
-
-## Known assumptions
-
-- Orchestration is single-turn and stateless (no memory persistence).
-- AI debug state is in-memory only.
-- `/api/respond` remains single-flight because it uses existing speech loop behavior.
-
-## Next follow-up PR
-
-- Add Twitch chat/event ingestion adapters that map external inputs into orchestrator requests.
-- Add optional moderation/safety pass before executing `shouldSpeak` intents.
-- Add intent quality telemetry (latency + validation metrics) for observability.
-
-## Current non-goals
-
-- No Twitch chat ingestion in this PR.
-- No screenshot/screen-analysis ingestion.
-- No memory/database persistence.
-- No scene automation or autonomous scheduling.
-- No moderation pipeline.
-- No multi-emotion combo generation by the model.
-- No direct model control of raw avatar expressions/hotkeys.

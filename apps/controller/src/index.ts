@@ -11,88 +11,83 @@ import {
   speechStatusSchema,
   type EventName,
   type EventPayloadMap,
+  type MultiOverlayState,
   type OverlayEvent,
   type OverlayState
 } from "@vtuber/shared";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
-import { VTubeStudioAdapter } from "./adapters/VTubeStudioAdapter";
 import { EventBus } from "./eventBus";
 import { env } from "./env";
-import { ExpressionEngine } from "./services/ExpressionEngine";
-import { AudioPlaybackService } from "./services/AudioPlaybackService";
 import { OpenAISpeechProvider } from "./services/OpenAISpeechProvider";
-import { PerformanceLoop } from "./services/PerformanceLoop";
+import { AudioPlaybackService } from "./services/AudioPlaybackService";
 import { OpenAIResponsesService } from "./services/OpenAIResponsesService";
-import { ResponseOrchestrator } from "./orchestration/ResponseOrchestrator";
-import { VTubeStudioClient } from "./services/vtubeStudio";
-import { createInitialState, patchState } from "./state";
 import { defaultPersonaConfig } from "./orchestration/prompt";
+import { createInitialMultiState } from "./state/multiState";
+import { getPerformerConfigs } from "./config/performers";
+import { createPerformer } from "./performers/createPerformer";
+import { ConversationDirector } from "./director/ConversationDirector";
+import { directorTextInputSchema } from "./director/types";
 
 const app = express();
 const server = http.createServer(app);
 const wsServer = new WebSocketServer({ server, path: env.wsPath });
 const eventBus = new EventBus();
 
-const vtubeStudioClient = new VTubeStudioClient({
-  url: env.vtsUrl,
-  pluginName: env.vtsPluginName,
-  pluginDeveloper: env.vtsPluginDeveloper,
-  authToken: env.vtsAuthToken
-});
-
-const avatarAdapter = new VTubeStudioAdapter({
-  client: vtubeStudioClient,
-  hotkeys: env.hotkeys
-});
-
-const expressionEngine = new ExpressionEngine(avatarAdapter);
-const speechProvider = new OpenAISpeechProvider();
+const performerConfigs = getPerformerConfigs();
 const audioPlaybackService = new AudioPlaybackService();
+const speechProvider = new OpenAISpeechProvider();
+const responsesService = new OpenAIResponsesService();
 
-let currentState: OverlayState = createInitialState();
+let currentState: MultiOverlayState = createInitialMultiState(performerConfigs);
 
-const performanceLoop = new PerformanceLoop({
-  expressionEngine,
-  speechProvider,
-  audioPlaybackService,
-  publish,
-  getControllerStatus: () => currentState.state
-});
+function getPrimaryPerformerId(): string {
+  return performerConfigs[0]?.id ?? "nova";
+}
 
-const openAIResponsesService = new OpenAIResponsesService();
-const responseOrchestrator = new ResponseOrchestrator({
-  service: openAIResponsesService,
-  hasOpenAIApiKey: Boolean(env.openaiApiKey),
-  model: env.openaiModel
-});
+function syncLegacyState(): void {
+  const activeId = currentState.stage.activeSpeakerId ?? currentState.stage.lastSpeakerId ?? getPrimaryPerformerId();
+  const source = currentState.performers[activeId] ?? currentState.performers[getPrimaryPerformerId()];
+  if (!source) {
+    return;
+  }
 
-const personaConfigSchema = z.object({
-  name: z.string().trim().min(1).max(48),
-  role: z.string().trim().min(1).max(160),
-  personality: z.string().trim().min(1).max(300),
-  tone: z.string().trim().min(1).max(120),
-  styleRules: z.string().trim().min(1).max(360),
-  background: z.string().trim().min(1).max(600),
-  boundaries: z.string().trim().min(1).max(360),
-  extraInstructions: z.string().trim().max(600).default("")
-});
+  currentState.legacy = {
+    characterName: source.characterName,
+    subtitle: source.subtitle,
+    speaking: source.speaking,
+    emotion: source.emotion,
+    status: source.status,
+    scene: source.scene,
+    state: source.state
+  };
+}
 
-const personaPresetNameSchema = z.string().trim().min(1).max(48);
-const personaPresetSaveSchema = z.object({
-  presetName: personaPresetNameSchema,
-  persona: personaConfigSchema
-});
-const personaPresetLoadSchema = z.object({
-  presetName: personaPresetNameSchema
-});
+function updateStage(updater: (stage: MultiOverlayState["stage"]) => MultiOverlayState["stage"]): void {
+  currentState = { ...currentState, stage: updater(currentState.stage) };
+  syncLegacyState();
+}
 
-const personaPresets = new Map<string, z.infer<typeof personaConfigSchema>>();
-personaPresets.set("Default", { ...defaultPersonaConfig });
+function patchPerformerState(performerId: string, updates: Partial<MultiOverlayState["performers"][string]>): void {
+  const prev = currentState.performers[performerId];
+  if (!prev) {
+    return;
+  }
 
+  currentState = {
+    ...currentState,
+    performers: {
+      ...currentState.performers,
+      [performerId]: {
+        ...prev,
+        ...updates,
+        performerId
+      }
+    }
+  };
 
-app.use(cors({ origin: env.corsOrigin }));
-app.use(express.json());
+  syncLegacyState();
+}
 
 function logEvent<T extends EventName>(type: T, payload: EventPayloadMap[T]): void {
   console.info(`[event] ${type}`, payload);
@@ -113,41 +108,38 @@ function publish<T extends EventName>(type: T, payload: EventPayloadMap[T]): voi
   broadcast(makeEvent(type, payload));
 }
 
-eventBus.on("subtitle.set", async ({ text, characterName }) => {
-  currentState = patchState(currentState, {
-    subtitle: text,
-    ...(characterName ? { characterName } : {})
-  });
+const performers = performerConfigs.map((config) =>
+  createPerformer({
+    config,
+    publish,
+    getControllerStatus: () => currentState.performers[config.id]?.state ?? "idle",
+    sharedAudioPlaybackService: audioPlaybackService,
+    sharedSpeechProvider: speechProvider,
+    responsesService
+  })
+);
+
+const performerMap = new Map(performers.map((performer) => [performer.id, performer]));
+
+const director = new ConversationDirector(performers, {
+  updateStage,
+  getState: () => currentState
 });
 
-eventBus.on("speaking.set", async ({ speaking }) => {
-  currentState = patchState(currentState, { speaking });
+const personaConfigSchema = z.object({
+  name: z.string().trim().min(1).max(48),
+  role: z.string().trim().min(1).max(160),
+  personality: z.string().trim().min(1).max(300),
+  tone: z.string().trim().min(1).max(120),
+  styleRules: z.string().trim().min(1).max(360),
+  background: z.string().trim().min(1).max(600),
+  boundaries: z.string().trim().min(1).max(360),
+  extraInstructions: z.string().trim().max(600).default("")
 });
 
-eventBus.on("emotion.set", ({ emotion }) => {
-  currentState = patchState(currentState, { emotion });
-});
+app.use(cors({ origin: env.corsOrigin }));
+app.use(express.json());
 
-eventBus.on("status.set", ({ status }) => {
-  currentState = patchState(currentState, { status });
-});
-
-eventBus.on("scene.set", ({ scene }) => {
-  currentState = patchState(currentState, { scene });
-});
-
-eventBus.on("state.set", ({ state }) => {
-  currentState = patchState(currentState, { state });
-});
-
-wsServer.on("connection", (socket) => {
-  console.info("[ws] overlay connected");
-  socket.send(JSON.stringify(makeEvent("state.sync", currentState)));
-
-  socket.on("close", () => {
-    console.info("[ws] overlay disconnected");
-  });
-});
 
 function bindValidatedRoute<T extends EventName>(path: string, type: T): void {
   app.post(path, (req, res) => {
@@ -166,16 +158,223 @@ bindValidatedRoute("/api/speaking", "speaking.set");
 bindValidatedRoute("/api/status", "status.set");
 bindValidatedRoute("/api/state", "state.set");
 
+function resolvePerformerId(payload: { performerId?: string }): string {
+  return payload.performerId ?? getPrimaryPerformerId();
+}
+
+eventBus.on("subtitle.set", ({ performerId, text, characterName }) => {
+  patchPerformerState(resolvePerformerId({ performerId }), {
+    subtitle: text,
+    ...(characterName ? { characterName } : {})
+  });
+});
+
+eventBus.on("speaking.set", ({ performerId, speaking }) => {
+  patchPerformerState(resolvePerformerId({ performerId }), { speaking });
+});
+
+eventBus.on("emotion.set", ({ performerId, emotion }) => {
+  patchPerformerState(resolvePerformerId({ performerId }), { emotion });
+});
+
+eventBus.on("status.set", ({ performerId, status }) => {
+  patchPerformerState(resolvePerformerId({ performerId }), { status });
+});
+
+eventBus.on("scene.set", ({ performerId, scene }) => {
+  patchPerformerState(resolvePerformerId({ performerId }), { scene });
+});
+
+eventBus.on("state.set", ({ performerId, state }) => {
+  patchPerformerState(resolvePerformerId({ performerId }), { state });
+});
+
+wsServer.on("connection", (socket) => {
+  socket.send(JSON.stringify(makeEvent("state.sync", currentState)));
+});
+
+function getPerformerOrThrow(id: string) {
+  const performer = performerMap.get(id);
+  if (!performer) {
+    throw new Error(`Unknown performer: ${id}`);
+  }
+
+  return performer;
+}
+
+app.get("/api/performers", (_req, res) => {
+  return res.json({ ok: true, performers: performers.map((performer) => ({ id: performer.id, displayName: performer.displayName })) });
+});
+
+app.get("/api/performers/:id/status", (req, res) => {
+  try {
+    return res.json({ ok: true, performer: getPerformerOrThrow(req.params.id).getStatus() });
+  } catch (error) {
+    return res.status(404).json({ ok: false, error: (error as Error).message });
+  }
+});
+
+app.get("/api/performers/:id/persona", (req, res) => {
+  try {
+    const performer = getPerformerOrThrow(req.params.id);
+    return res.json({ ok: true, persona: performer.responseOrchestrator.getPersonaConfig() });
+  } catch (error) {
+    return res.status(404).json({ ok: false, error: (error as Error).message });
+  }
+});
+
+app.post("/api/performers/:id/persona", (req, res) => {
+  try {
+    const performer = getPerformerOrThrow(req.params.id);
+    const parsed = personaConfigSchema.safeParse({ ...defaultPersonaConfig, ...req.body });
+    if (!parsed.success) {
+      return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+    }
+
+    performer.responseOrchestrator.setPersonaConfig(parsed.data);
+    return res.json({ ok: true, persona: performer.responseOrchestrator.getPersonaConfig() });
+  } catch (error) {
+    return res.status(404).json({ ok: false, error: (error as Error).message });
+  }
+});
+
+async function handleRespondRoute(performerId: string, body: unknown, execute: boolean, res: express.Response): Promise<void> {
+  const parsed = respondRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+
+  try {
+    const performer = getPerformerOrThrow(performerId);
+    const intent = await performer.responseOrchestrator.generateIntent(parsed.data, { replyTarget: "event" });
+
+    if (!execute || !intent.shouldSpeak) {
+      res.json({ ok: true, intent, triggeredSpeaking: false });
+      return;
+    }
+
+    await director.respondAsPerformer(performerId, parsed.data, "event");
+    res.json({ ok: true, intent, triggeredSpeaking: true, speech: performer.performanceLoop.getStatus() });
+  } catch (error) {
+    const message = (error as Error).message;
+    const statusCode = message.includes("already in progress") ? 409 : 500;
+    res.status(statusCode).json({ ok: false, error: message });
+  }
+}
+
+app.post("/api/performers/:id/respond-only", async (req, res) => {
+  await handleRespondRoute(req.params.id, req.body, false, res);
+});
+
+app.post("/api/performers/:id/respond", async (req, res) => {
+  await handleRespondRoute(req.params.id, req.body, true, res);
+});
+
+app.get("/api/director/status", (_req, res) => {
+  res.json({ ok: true, director: director.getStatus(), state: currentState });
+});
+
+app.post("/api/director/banter/start", async (req, res) => {
+  await director.startAutonomousBanter(req.body?.seed);
+  res.json({ ok: true, director: director.getStatus() });
+});
+
+app.post("/api/director/banter/stop", async (req, res) => {
+  await director.stopAutonomousBanter(req.body?.reason);
+  res.json({ ok: true, director: director.getStatus() });
+});
+
+app.post("/api/director/chat", async (req, res) => {
+  const parsed = directorTextInputSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  }
+
+  const result = await director.interruptWithChat({
+    inputType: "event",
+    event: { type: "chat.message", summary: `${parsed.data.username ? `${parsed.data.username}: ` : ""}${parsed.data.text}` }
+  });
+
+  return res.json({ ok: true, ...result });
+});
+
+app.post("/api/director/operator", async (req, res) => {
+  const parsed = directorTextInputSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  }
+
+  const result = await director.interruptWithOperator({ inputType: "manual", text: parsed.data.text });
+  return res.json({ ok: true, ...result });
+});
+
+// backward-compatible routes map to default performer (nova)
+app.post("/api/respond-only", async (req, res) => {
+  await handleRespondRoute(getPrimaryPerformerId(), req.body, false, res);
+});
+
+app.post("/api/respond", async (req, res) => {
+  await handleRespondRoute(getPrimaryPerformerId(), req.body, true, res);
+});
+
+app.get("/api/ai/status", (_req, res) => {
+  const performer = getPerformerOrThrow(getPrimaryPerformerId());
+  return res.json({ ok: true, ai: performer.responseOrchestrator.getStatus() });
+});
+
+app.get("/api/persona", (_req, res) => {
+  const performer = getPerformerOrThrow(getPrimaryPerformerId());
+  return res.json({ ok: true, persona: performer.responseOrchestrator.getPersonaConfig() });
+});
+
+app.post("/api/persona", (req, res) => {
+  const performer = getPerformerOrThrow(getPrimaryPerformerId());
+  const parsed = personaConfigSchema.safeParse({ ...defaultPersonaConfig, ...req.body });
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  }
+
+  performer.responseOrchestrator.setPersonaConfig(parsed.data);
+  return res.json({ ok: true, persona: performer.responseOrchestrator.getPersonaConfig() });
+});
+
+app.post("/api/speak", async (req, res) => {
+  const parsed = speechRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  try {
+    const performerId = req.body?.performerId ?? getPrimaryPerformerId();
+    const performer = getPerformerOrThrow(performerId);
+    await performer.performanceLoop.performLine(parsed.data);
+    return res.json({ ok: true, speech: performer.performanceLoop.getStatus() });
+  } catch (error) {
+    const message = (error as Error).message;
+    const statusCode = message.includes("already in progress") ? 409 : 500;
+    return res.status(statusCode).json({ ok: false, error: message });
+  }
+});
+
+app.get("/api/speech/status", (_req, res) => {
+  const performer = getPerformerOrThrow(getPrimaryPerformerId());
+  const status = performer.performanceLoop.getStatus();
+  const validatedStatus = speechStatusSchema.parse(status);
+  return res.json({ ok: true, speech: validatedStatus, state: currentState });
+});
+
 app.post("/api/avatar/emotion", async (req, res) => {
   const parsed = emotionInputSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
-  const normalized = expressionEngine.normalizeEmotionInput(parsed.data.emotion);
-  const state = expressionEngine.buildExpressionState(normalized);
-  const applied = await expressionEngine.applyExpressionState(state);
-  publish("emotion.set", { emotion: normalized });
+  const performer = getPerformerOrThrow(req.body?.performerId ?? getPrimaryPerformerId());
+  const normalized = performer.expressionEngine.normalizeEmotionInput(parsed.data.emotion);
+  const state = performer.expressionEngine.buildExpressionState(normalized);
+  const applied = await performer.expressionEngine.applyExpressionState(state);
+  publish("emotion.set", { performerId: performer.id, emotion: normalized });
 
   return res.json({ ok: true, emotion: normalized, expressionState: applied });
 });
@@ -187,219 +386,12 @@ app.post("/api/avatar/expression", async (req, res) => {
   }
 
   try {
-    const applied = await expressionEngine.applyExpressionState(parsed.data);
+    const performer = getPerformerOrThrow(req.body?.performerId ?? getPrimaryPerformerId());
+    const applied = await performer.expressionEngine.applyExpressionState(parsed.data);
     return res.json({ ok: true, expressionState: applied });
   } catch (error) {
     return res.status(400).json({ ok: false, error: (error as Error).message });
   }
-});
-
-app.post("/api/avatar/test-cycle", async (_req, res) => {
-  const cycle = [
-    "neutral",
-    "angry",
-    "pouting",
-    "embarrassed",
-    "excited",
-    "happy",
-    "sad",
-    "shocked",
-    "wink"
-  ] as const;
-
-  void (async () => {
-    for (const [index, emotion] of cycle.entries()) {
-      const state = expressionEngine.buildExpressionState(emotion);
-      await expressionEngine.applyExpressionState(state);
-      console.info("[avatar.test-cycle] applied", { emotion, index });
-      await new Promise((resolve) => setTimeout(resolve, 1600));
-    }
-  })();
-
-  return res.json({ ok: true, message: "Avatar expression cycle started", cycle });
-});
-
-app.get("/api/avatar/status", (_req, res) => {
-  const adapterStatus = avatarAdapter.getStatus();
-  return res.json({
-    ok: true,
-    adapter: adapterStatus,
-    desiredExpressionState: expressionEngine.getCurrentState(),
-    actualActiveToggleState: adapterStatus.actualActiveToggleState,
-    lastTransitionPlan: adapterStatus.lastTransitionPlan
-  });
-});
-
-app.post("/api/test-sequence", async (_req, res) => {
-  const steps: Array<{ delay: number; type: EventName; payload: unknown }> = [
-    { delay: 0, type: "status.set", payload: { status: "Running demo sequence" } },
-    { delay: 300, type: "subtitle.set", payload: { text: "Hello chat, I am online.", characterName: "Nova" } },
-    { delay: 700, type: "speaking.set", payload: { speaking: true } },
-    { delay: 1300, type: "subtitle.set", payload: { text: "Expression test in progress..." } },
-    { delay: 2200, type: "speaking.set", payload: { speaking: false } },
-    { delay: 3000, type: "status.set", payload: { status: "Demo sequence complete" } }
-  ];
-
-  steps.forEach(({ delay, type, payload }) => {
-    setTimeout(() => {
-      const validated = parseEvent(type, payload);
-      publish(type, validated);
-    }, delay);
-  });
-
-  return res.json({ ok: true, message: "Demo sequence started" });
-});
-
-
-app.post("/api/speak", async (req, res) => {
-  const parsed = speechRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-
-  try {
-    await performanceLoop.performLine(parsed.data);
-    return res.json({ ok: true, speech: performanceLoop.getStatus() });
-  } catch (error) {
-    const message = (error as Error).message;
-    const statusCode = message.includes("already in progress") ? 409 : 500;
-    return res.status(statusCode).json({ ok: false, error: message });
-  }
-});
-
-app.post("/api/test/speak", async (_req, res) => {
-  const testLine = {
-    text: "System online. Voice test successful.",
-    emotion: "happy" as const
-  };
-
-  try {
-    await performanceLoop.performLine(testLine);
-    return res.json({ ok: true, speech: performanceLoop.getStatus(), testLine });
-  } catch (error) {
-    const message = (error as Error).message;
-    const statusCode = message.includes("already in progress") ? 409 : 500;
-    return res.status(statusCode).json({ ok: false, error: message });
-  }
-});
-
-app.get("/api/speech/status", (_req, res) => {
-  const status = performanceLoop.getStatus();
-  const validatedStatus = speechStatusSchema.parse(status);
-  return res.json({ ok: true, speech: validatedStatus, state: currentState });
-});
-
-app.post("/api/respond-only", async (req, res) => {
-  const parsed = respondRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-
-  try {
-    const intent = await responseOrchestrator.generateIntent(parsed.data);
-    return res.json({ ok: true, intent });
-  } catch (error) {
-    responseOrchestrator.setLastValidationError((error as Error).message);
-    return res.status(500).json({ ok: false, error: (error as Error).message });
-  }
-});
-
-app.post("/api/respond", async (req, res) => {
-  const parsed = respondRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-
-  try {
-    const intent = await responseOrchestrator.generateIntent(parsed.data);
-    let triggeredSpeaking = false;
-
-    const aiSubtitle = intent.spokenText.trim();
-    if (aiSubtitle.length > 0) {
-      publish("subtitle.set", { text: aiSubtitle });
-    }
-
-    if (intent.shouldSpeak) {
-      await performanceLoop.performLine({
-        text: intent.spokenText,
-        emotion: intent.emotion,
-        expressionState: intent.expressionState
-      });
-      triggeredSpeaking = true;
-    }
-
-    responseOrchestrator.markRespondOutcome(triggeredSpeaking);
-
-    return res.json({
-      ok: true,
-      intent,
-      triggeredSpeaking,
-      speech: performanceLoop.getStatus()
-    });
-  } catch (error) {
-    responseOrchestrator.setLastValidationError((error as Error).message);
-    responseOrchestrator.markRespondOutcome(false);
-    const message = (error as Error).message;
-    const statusCode = message.includes("already in progress") ? 409 : 500;
-    return res.status(statusCode).json({ ok: false, error: message });
-  }
-});
-
-app.get("/api/ai/status", (_req, res) => {
-  return res.json({ ok: true, ai: responseOrchestrator.getStatus() });
-});
-
-app.get("/api/persona", (_req, res) => {
-  return res.json({ ok: true, persona: responseOrchestrator.getPersonaConfig() });
-});
-
-app.post("/api/persona", (req, res) => {
-  const parsed = personaConfigSchema.safeParse({ ...defaultPersonaConfig, ...req.body });
-  if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: parsed.error.flatten() });
-  }
-
-  responseOrchestrator.setPersonaConfig(parsed.data);
-  return res.json({ ok: true, persona: responseOrchestrator.getPersonaConfig() });
-});
-
-app.get("/api/personas", (_req, res) => {
-  return res.json({
-    ok: true,
-    presets: Array.from(personaPresets.keys()).sort((a, b) => a.localeCompare(b)),
-    activePersona: responseOrchestrator.getPersonaConfig()
-  });
-});
-
-app.post("/api/personas", (req, res) => {
-  const parsed = personaPresetSaveSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: parsed.error.flatten() });
-  }
-
-  const { presetName, persona } = parsed.data;
-  personaPresets.set(presetName, { ...persona });
-
-  return res.json({
-    ok: true,
-    presetName,
-    presets: Array.from(personaPresets.keys()).sort((a, b) => a.localeCompare(b))
-  });
-});
-
-app.post("/api/personas/load", (req, res) => {
-  const parsed = personaPresetLoadSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: parsed.error.flatten() });
-  }
-
-  const preset = personaPresets.get(parsed.data.presetName);
-  if (!preset) {
-    return res.status(404).json({ ok: false, error: `Persona preset not found: ${parsed.data.presetName}` });
-  }
-
-  responseOrchestrator.setPersonaConfig(preset);
-  return res.json({ ok: true, presetName: parsed.data.presetName, persona: responseOrchestrator.getPersonaConfig() });
 });
 
 app.get("/health", (_req, res) => {
@@ -411,12 +403,13 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
     return res.status(400).json({ error: "Invalid payload", details: error.flatten() });
   }
 
-  console.error("[controller] unhandled error", error);
   return res.status(500).json({ error: "Internal server error" });
 });
 
 server.listen(env.port, async () => {
   console.info(`Controller listening on http://localhost:${env.port}`);
   console.info(`WebSocket endpoint ws://localhost:${env.port}${env.wsPath}`);
-  await avatarAdapter.connect();
+  for (const performer of performers) {
+    await performer.avatarAdapter.connect();
+  }
 });
