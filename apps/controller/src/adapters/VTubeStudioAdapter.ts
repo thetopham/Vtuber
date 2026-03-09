@@ -1,7 +1,7 @@
-import type {
-  AvatarExpressionState,
-  BaseExpression,
-  OverlayExpression
+import type { AvatarExpressionState, AvatarToggle } from "@vtuber/shared";
+import {
+  avatarExpressionStateSchema,
+  avatarToggles
 } from "@vtuber/shared";
 import type {
   ActiveToggleState,
@@ -13,33 +13,37 @@ import type {
 import { VTubeStudioClient } from "../services/vtubeStudio";
 
 const defaultExpressionState: AvatarExpressionState = {
-  base: "happy",
-  overlays: []
+  active: ["neutral"]
 };
 
-export class VTubeStudioAdapter implements AvatarAdapter {
-  private readonly client: VTubeStudioClient;
-  private readonly hotkeys: Record<BaseExpression | OverlayExpression, string>;
-  private desiredExpressionState: AvatarExpressionState = defaultExpressionState;
-  private actualActiveToggleState: ActiveToggleState = {
+function createEmptyToggleState(): ActiveToggleState {
+  return {
     angry: false,
     approval: false,
     embarrassed: false,
     excited: false,
     happy: false,
+    neutral: false,
     sad: false,
     shocked: false,
     wink: false
   };
+}
+
+export class VTubeStudioAdapter implements AvatarAdapter {
+  private readonly client: VTubeStudioClient;
+  private readonly hotkeys: Record<AvatarToggle, string>;
+  private desiredExpressionState: AvatarExpressionState = defaultExpressionState;
+  private actualActiveToggleState: ActiveToggleState = createEmptyToggleState();
   private lastTransitionPlan: ExpressionTransitionPlan = {
     toDisable: [],
-    toEnable: ["happy"]
+    toEnable: ["neutral"]
   };
-  private activeTimers = new Map<OverlayExpression | BaseExpression, NodeJS.Timeout>();
+  private activeTimers = new Map<string, NodeJS.Timeout>();
 
   public constructor(args: {
     client: VTubeStudioClient;
-    hotkeys: Record<BaseExpression | OverlayExpression, string>;
+    hotkeys: Record<AvatarToggle, string>;
   }) {
     this.client = args.client;
     this.hotkeys = args.hotkeys;
@@ -83,6 +87,7 @@ export class VTubeStudioAdapter implements AvatarAdapter {
       await this.toggle(expression, false);
     }
 
+    this.desiredExpressionState = { active: [] };
     this.lastTransitionPlan = {
       toDisable,
       toEnable: []
@@ -90,17 +95,26 @@ export class VTubeStudioAdapter implements AvatarAdapter {
   }
 
   public async resetToDefault(): Promise<void> {
-    console.info("[VTubeStudioAdapter] Resetting to default expression");
-    await this.applyExpressionState({ base: "happy", overlays: [] });
+    console.info("[VTubeStudioAdapter] Resetting to default expression state");
+    await this.applyExpressionState(defaultExpressionState);
   }
 
   public async applyExpressionState(state: AvatarExpressionState): Promise<void> {
-    const desiredToggleState = this.buildDesiredToggleState(state);
+    const parsed = avatarExpressionStateSchema.parse(state);
+    const desiredToggleState = this.buildDesiredToggleState(parsed);
     const transitionPlan = this.buildTransitionPlan(desiredToggleState);
     this.lastTransitionPlan = transitionPlan;
 
-    console.info("[VTubeStudioAdapter] Computed expression transition plan", {
-      desiredExpressionState: state,
+    if (transitionPlan.toDisable.length === 0 && transitionPlan.toEnable.length === 0) {
+      console.info("[VTubeStudioAdapter] Expression state unchanged; skipping", {
+        state: parsed
+      });
+      this.setupDurationReset(parsed);
+      return;
+    }
+
+    console.info("[VTubeStudioAdapter] Reconciling expression toggles", {
+      desiredExpressionState: parsed,
       desiredToggleState,
       actualActiveToggleState: this.actualActiveToggleState,
       transitionPlan
@@ -110,77 +124,41 @@ export class VTubeStudioAdapter implements AvatarAdapter {
       await this.toggle(expression, false);
     }
 
-    if (transitionPlan.toEnable.includes("happy")) {
-      await this.toggle("happy", true);
-    }
-
-    if (state.base !== "happy" && transitionPlan.toEnable.includes(state.base)) {
-      await this.toggle(state.base, true);
-    }
-
-    for (const overlay of state.overlays) {
-      if (!transitionPlan.toEnable.includes(overlay)) {
-        continue;
-      }
-
-      await this.toggle(overlay, true);
+    for (const expression of transitionPlan.toEnable) {
+      await this.toggle(expression, true);
     }
 
     this.desiredExpressionState = {
-      base: state.base,
-      overlays: [...state.overlays],
-      ...(state.durationMs ? { durationMs: state.durationMs } : {})
+      active: [...parsed.active],
+      ...(parsed.durationMs ? { durationMs: parsed.durationMs } : {})
     };
 
-    this.setupAutoClear(state);
+    this.setupDurationReset(parsed);
     console.info("[VTubeStudioAdapter] Applied expression state", {
       desiredExpressionState: this.desiredExpressionState,
       actualActiveToggleState: this.actualActiveToggleState
     });
   }
 
-  private setupAutoClear(state: AvatarExpressionState): void {
-    const overlayDurations: Partial<Record<OverlayExpression | BaseExpression, number>> = {
-      wink: 1000,
-      embarrassed: 3000,
-      shocked: 2500
-    };
+  private setupDurationReset(state: AvatarExpressionState): void {
+    const key = "state-duration-reset";
+    const existing = this.activeTimers.get(key);
+    if (existing) {
+      clearTimeout(existing);
+      this.activeTimers.delete(key);
+    }
 
-    const timedKeys: Array<OverlayExpression | BaseExpression> = [
-      ...state.overlays,
-      ...(state.base === "shocked" ? ["shocked" as const] : [])
-    ];
+    if (!state.durationMs) {
+      return;
+    }
 
-    timedKeys.forEach((expression) => {
-      const duration = overlayDurations[expression];
-      if (!duration) {
-        return;
-      }
+    const timeout = setTimeout(async () => {
+      this.activeTimers.delete(key);
+      await this.applyExpressionState(defaultExpressionState);
+      console.info("[VTubeStudioAdapter] Duration elapsed; reset to default expression state");
+    }, state.durationMs);
 
-      const existing = this.activeTimers.get(expression);
-      if (existing) {
-        clearTimeout(existing);
-      }
-
-      const timeout = setTimeout(async () => {
-        this.activeTimers.delete(expression);
-
-        if (expression === "shocked") {
-          await this.applyExpressionState({ base: "happy", overlays: [] });
-          console.info("[VTubeStudioAdapter] Auto-cleared shocked");
-          return;
-        }
-
-        const nextOverlays = this.desiredExpressionState.overlays.filter((item) => item !== expression);
-        await this.applyExpressionState({
-          base: this.desiredExpressionState.base,
-          overlays: nextOverlays
-        });
-        console.info("[VTubeStudioAdapter] Auto-cleared overlay", { expression });
-      }, duration);
-
-      this.activeTimers.set(expression, timeout);
-    });
+    this.activeTimers.set(key, timeout);
   }
 
   private clearTimers(): void {
@@ -189,27 +167,16 @@ export class VTubeStudioAdapter implements AvatarAdapter {
   }
 
   private buildDesiredToggleState(state: AvatarExpressionState): ActiveToggleState {
-    const desiredState: ActiveToggleState = {
-      angry: false,
-      approval: false,
-      embarrassed: false,
-      excited: false,
-      happy: false,
-      sad: false,
-      shocked: false,
-      wink: false
-    };
-
-    desiredState[state.base] = true;
-    state.overlays.forEach((overlay) => {
-      desiredState[overlay] = true;
-    });
+    const desiredState = createEmptyToggleState();
+    for (const toggle of state.active) {
+      desiredState[toggle] = true;
+    }
 
     return desiredState;
   }
 
   private buildTransitionPlan(desiredToggleState: ActiveToggleState): ExpressionTransitionPlan {
-    const allExpressions = Object.keys(this.actualActiveToggleState) as ToggleExpression[];
+    const allExpressions = avatarToggles as readonly ToggleExpression[];
     const toDisable = allExpressions.filter(
       (expression) => this.actualActiveToggleState[expression] && !desiredToggleState[expression]
     );

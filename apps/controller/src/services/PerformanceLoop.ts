@@ -1,4 +1,4 @@
-import type { Emotion, EventName, EventPayloadMap, SpeechStatus } from "@vtuber/shared";
+import type { AvatarExpressionState, Emotion, EventName, EventPayloadMap, SpeechStatus } from "@vtuber/shared";
 import { ExpressionEngine } from "./ExpressionEngine";
 import type { AudioPlaybackService } from "./AudioPlaybackService";
 import type { SpeechProvider } from "./SpeechProvider";
@@ -16,6 +16,7 @@ type PerformanceLoopDependencies = {
 export type SpeakInput = {
   text: string;
   emotion: Emotion;
+  expressionState?: AvatarExpressionState;
 };
 
 export class PerformanceLoop {
@@ -57,14 +58,14 @@ export class PerformanceLoop {
   private async runSpeech(input: SpeakInput): Promise<void> {
     const { expressionEngine, speechProvider, audioPlaybackService, publish } = this.dependencies;
 
-    const expressionState = expressionEngine.buildExpressionState(input.emotion);
+    const expressionState = input.expressionState ?? expressionEngine.buildExpressionState(input.emotion);
     await expressionEngine.applyExpressionState(expressionState);
 
     publish("emotion.set", { emotion: input.emotion });
     publish("subtitle.set", { text: input.text });
     publish("state.set", { state: "speaking" });
     publish("speaking.set", { speaking: true });
-    publish("speech.started", input);
+    publish("speech.started", { text: input.text, emotion: input.emotion });
 
     try {
       const speechResult = await speechProvider.synthesize({ text: input.text });
@@ -72,7 +73,7 @@ export class PerformanceLoop {
     } finally {
       publish("speaking.set", { speaking: false });
       publish("state.set", { state: "idle" });
-      publish("speech.finished", input);
+      publish("speech.finished", { text: input.text, emotion: input.emotion });
     }
   }
 }

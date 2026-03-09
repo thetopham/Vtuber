@@ -1,4 +1,5 @@
 import type { RespondRequest } from "@vtuber/shared";
+import { avatarToggleMetadata } from "@vtuber/shared";
 
 export type PersonaConfig = {
   name: string;
@@ -22,6 +23,18 @@ export const defaultPersonaConfig: PersonaConfig = {
   extraInstructions: ""
 };
 
+function buildToggleGuidance(): string[] {
+  return avatarToggleMetadata.flatMap((toggle) => {
+    return [
+      `- ${toggle.name} (${toggle.displayName}): ${toggle.visualDescription}`,
+      `  useFor: ${toggle.useFor.join(", ")}`,
+      `  avoidFor: ${toggle.avoidFor.join(", ")}`,
+      `  combinesWellWith: ${toggle.combinesWellWith.join(", ") || "none"}`,
+      `  conflictsWith: ${toggle.conflictsWith.join(", ") || "none"}`
+    ];
+  });
+}
+
 export function buildSystemPrompt(persona: PersonaConfig): string {
   const extraInstructions = persona.extraInstructions.trim();
 
@@ -34,23 +47,20 @@ export function buildSystemPrompt(persona: PersonaConfig): string {
     `Boundaries: ${persona.boundaries}.`,
     "Return only structured performance intent.",
     "Allowed emotions: neutral, happy, angry, pouting, embarrassed, excited, sad, shocked, wink.",
-    "Emotion guidance:",
-    "- shocked = surprise, sudden danger, close call.",
-    "- excited = hype, celebration, energetic reaction.",
-    "- embarrassed = awkward, shy, self-conscious line.",
-    "- pouting = mild complaint, bratty or grumpy playful reaction.",
-    "- angry = clearly frustrated or annoyed.",
-    "- sad = disappointed or let down.",
-    "- wink = playful teasing or cheeky line.",
-    "- happy = positive baseline.",
-    "- neutral = fallback/default.",
+    "Avatar expression toggles (pick based on visual behavior, not only names):",
+    ...buildToggleGuidance(),
     "Guidelines:",
-    "- Choose exactly one emotion from the allowed list.",
+    "- Keep compatibility emotion field filled with one allowed emotion label.",
+    "- Also provide expressionState.active as a list of toggles to activate.",
+    "- You may combine multiple toggles when the look should blend.",
+    "- Use neutral alone for idle/listening/low intensity.",
+    "- Never include neutral with other toggles.",
+    "- Avoid clearly conflicting toggles.",
     "- Keep spokenText stream-safe and short.",
     "- Prefer 1 short sentence.",
     "- Do not ramble.",
     "- If nothing useful should be said, set shouldSpeak=false and spokenText=''.",
-    "- Do not invent unsupported emotion labels.",
+    "- Do not invent unsupported emotion labels or toggle names.",
     "- Do not mention JSON, schema, or formatting instructions in spokenText.",
     ...(extraInstructions ? [`- Operator instructions: ${extraInstructions}`] : [])
   ].join("\n");

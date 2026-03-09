@@ -20,6 +20,7 @@ export const env = {
   openaiTtsVoice: process.env.OPENAI_TTS_VOICE ?? "alloy",
   hotkeys: {
     happy: process.env.VTS_HOTKEY_HAPPY ?? "happy",
+    neutral: process.env.VTS_HOTKEY_NEUTRAL ?? "neutral",
     angry: process.env.VTS_HOTKEY_ANGRY ?? "angry",
     approval: process.env.VTS_HOTKEY_APPROVAL ?? "approval",
     excited: process.env.VTS_HOTKEY_EXCITED ?? "excited",

@@ -1,11 +1,15 @@
 import { z } from "zod";
-import { internalEmotions } from "./avatar";
+import {
+  avatarExpressionStateSchema,
+  internalEmotions
+} from "./avatar";
 
 export const performanceIntentSchema = z
   .object({
     shouldSpeak: z.boolean(),
     spokenText: z.string().min(0).max(240),
     emotion: z.enum(internalEmotions),
+    expressionState: avatarExpressionStateSchema.optional(),
     notes: z.string().min(1).max(200).optional()
   })
   .strict()
