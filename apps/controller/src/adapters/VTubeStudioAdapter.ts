@@ -11,6 +11,17 @@ const defaultExpressionState: AvatarExpressionState = {
   overlays: []
 };
 
+const allExpressions: ReadonlyArray<BaseExpression | OverlayExpression> = [
+  "happy",
+  "angry",
+  "approval",
+  "excited",
+  "sad",
+  "shocked",
+  "embarrassed",
+  "wink"
+];
+
 export class VTubeStudioAdapter implements AvatarAdapter {
   private readonly client: VTubeStudioClient;
   private readonly hotkeys: Record<BaseExpression | OverlayExpression, string>;
@@ -52,7 +63,12 @@ export class VTubeStudioAdapter implements AvatarAdapter {
   public async clearAllExpressions(): Promise<void> {
     this.clearTimers();
     console.info("[VTubeStudioAdapter] Clearing expressions");
-    await this.trigger("happy");
+    const activeExpressions = this.getActiveExpressions(this.currentExpressionState);
+    for (const expression of activeExpressions) {
+      await this.trigger(expression);
+    }
+
+    this.currentExpressionState = { base: "happy", overlays: [] };
   }
 
   public async resetToDefault(): Promise<void> {
@@ -62,25 +78,39 @@ export class VTubeStudioAdapter implements AvatarAdapter {
   }
 
   public async applyExpressionState(state: AvatarExpressionState): Promise<void> {
-    await this.clearAllExpressions();
-    await this.trigger("happy");
-
-    if (state.base !== "happy") {
-      await this.trigger(state.base);
-    }
-
-    for (const overlay of state.overlays) {
-      await this.trigger(overlay);
-    }
-
-    this.currentExpressionState = {
+    const nextState: AvatarExpressionState = {
       base: state.base,
       overlays: [...state.overlays],
       ...(state.durationMs ? { durationMs: state.durationMs } : {})
     };
 
-    this.setupAutoClear(state);
-    console.info("[VTubeStudioAdapter] Applied expression state", state);
+    const currentlyActive = this.getActiveExpressions(this.currentExpressionState);
+    const nextActive = this.getActiveExpressions(nextState);
+
+    for (const expression of currentlyActive) {
+      if (!nextActive.has(expression)) {
+        await this.trigger(expression);
+      }
+    }
+
+    for (const expression of allExpressions) {
+      if (nextActive.has(expression) && !currentlyActive.has(expression)) {
+        await this.trigger(expression);
+      }
+    }
+
+    this.currentExpressionState = {
+      base: nextState.base,
+      overlays: [...nextState.overlays],
+      ...(nextState.durationMs ? { durationMs: nextState.durationMs } : {})
+    };
+
+    this.setupAutoClear(nextState);
+    console.info("[VTubeStudioAdapter] Applied expression state", nextState);
+  }
+
+  private getActiveExpressions(state: AvatarExpressionState): Set<BaseExpression | OverlayExpression> {
+    return new Set([state.base, ...state.overlays]);
   }
 
   private setupAutoClear(state: AvatarExpressionState): void {
