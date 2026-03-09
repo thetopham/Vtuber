@@ -10,7 +10,7 @@ export const env = {
   port: Number(process.env.CONTROLLER_PORT ?? DEFAULT_CONTROLLER_PORT),
   wsPath: process.env.WS_PATH ?? DEFAULT_WS_PATH,
   corsOrigin: process.env.CORS_ORIGIN ?? "*",
-  vtsUrl: process.env.VTS_WS_URL ?? "ws://127.0.0.1:8001",
+  vtsUrl: process.env.VTS_WS_URL ?? "ws://0.0.0.0:8001",
   vtsPluginName: process.env.VTS_PLUGIN_NAME ?? "Vtuber Controller",
   vtsPluginDeveloper: process.env.VTS_PLUGIN_DEVELOPER ?? "Vtuber Team",
   vtsAuthToken: process.env.VTS_AUTH_TOKEN,
