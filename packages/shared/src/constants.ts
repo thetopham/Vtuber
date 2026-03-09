@@ -1,13 +1,8 @@
-export const EMOTIONS = [
-  "neutral",
-  "happy",
-  "angry",
-  "sad",
-  "surprised",
-  "thinking"
-] as const;
+import { internalEmotions, type InternalEmotion } from "./avatar";
 
-export type Emotion = (typeof EMOTIONS)[number];
+export const EMOTIONS = internalEmotions;
+
+export type Emotion = InternalEmotion;
 
 export const DEFAULT_STATE = {
   characterName: "Nova",

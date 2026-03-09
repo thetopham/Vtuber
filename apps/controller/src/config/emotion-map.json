@@ -1,0 +1,38 @@
+{
+  "neutral": {
+    "base": "happy",
+    "overlays": []
+  },
+  "happy": {
+    "base": "happy",
+    "overlays": []
+  },
+  "angry": {
+    "base": "angry",
+    "overlays": []
+  },
+  "pouting": {
+    "base": "approval",
+    "overlays": []
+  },
+  "embarrassed": {
+    "base": "happy",
+    "overlays": ["embarrassed"]
+  },
+  "excited": {
+    "base": "excited",
+    "overlays": []
+  },
+  "sad": {
+    "base": "sad",
+    "overlays": []
+  },
+  "shocked": {
+    "base": "shocked",
+    "overlays": []
+  },
+  "wink": {
+    "base": "happy",
+    "overlays": ["wink"]
+  }
+}
