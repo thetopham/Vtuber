@@ -7,7 +7,7 @@
     <style>
       body { font-family: Inter, Arial, sans-serif; background: #111827; color: #fff; margin: 0; padding: 24px; }
       .card { max-width: 860px; margin: auto; background: #1f2937; border-radius: 14px; padding: 20px; }
-      input, select, button { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #374151; }
+      input, select, button, textarea { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #374151; background:#111827; color:#fff; }
       button { cursor: pointer; background: #2563eb; color: white; border: none; }
       .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
       .toggle {
@@ -52,6 +52,21 @@
       <div class="row">
         <input id="tts" value="This is a browser test TTS line" style="flex:1" />
         <button onclick="sendTts()">Send TTS</button>
+      </div>
+
+      <h2>Backend Persona (SillyTavern-style card)</h2>
+      <p style="margin-top:0;color:#cbd5e1">These settings only affect AI response generation in the controller backend, not the visible overlay layout.</p>
+      <div class="row"><input id="persona-name" placeholder="Name" style="flex:1" /></div>
+      <div class="row"><input id="persona-role" placeholder="Role / archetype" style="flex:1" /></div>
+      <div class="row"><textarea id="persona-personality" placeholder="Personality" style="flex:1;min-height:68px"></textarea></div>
+      <div class="row"><input id="persona-tone" placeholder="Tone" style="flex:1" /></div>
+      <div class="row"><textarea id="persona-style" placeholder="Style rules" style="flex:1;min-height:68px"></textarea></div>
+      <div class="row"><textarea id="persona-background" placeholder="Background / scenario" style="flex:1;min-height:72px"></textarea></div>
+      <div class="row"><textarea id="persona-boundaries" placeholder="Boundaries / safety" style="flex:1;min-height:68px"></textarea></div>
+      <div class="row"><textarea id="persona-extra" placeholder="Extra operator instructions (optional)" style="flex:1;min-height:68px"></textarea></div>
+      <div class="row">
+        <button onclick="loadPersona()">Reload Persona</button>
+        <button onclick="savePersona()">Save Persona</button>
       </div>
 
       <h2>Emotion Toggles</h2>
@@ -102,6 +117,30 @@
         status.textContent = message;
       }
 
+      function readPersonaForm() {
+        return {
+          name: document.getElementById('persona-name').value,
+          role: document.getElementById('persona-role').value,
+          personality: document.getElementById('persona-personality').value,
+          tone: document.getElementById('persona-tone').value,
+          styleRules: document.getElementById('persona-style').value,
+          background: document.getElementById('persona-background').value,
+          boundaries: document.getElementById('persona-boundaries').value,
+          extraInstructions: document.getElementById('persona-extra').value
+        };
+      }
+
+      function writePersonaForm(persona) {
+        document.getElementById('persona-name').value = persona.name ?? '';
+        document.getElementById('persona-role').value = persona.role ?? '';
+        document.getElementById('persona-personality').value = persona.personality ?? '';
+        document.getElementById('persona-tone').value = persona.tone ?? '';
+        document.getElementById('persona-style').value = persona.styleRules ?? '';
+        document.getElementById('persona-background').value = persona.background ?? '';
+        document.getElementById('persona-boundaries').value = persona.boundaries ?? '';
+        document.getElementById('persona-extra').value = persona.extraInstructions ?? '';
+      }
+
       async function request(method, path, body) {
         try {
           const res = await fetch(base + path, {
@@ -147,7 +186,21 @@
       window.runAvatarCycle = () => request('POST', '/api/avatar/test-cycle', {});
       window.getAvatarStatus = () => request('GET', '/api/avatar/status');
 
+      window.loadPersona = async () => {
+        const json = await request('GET', '/api/persona');
+        if (json?.ok && json.persona) {
+          writePersonaForm(json.persona);
+        }
+      };
+      window.savePersona = async () => {
+        const json = await request('POST', '/api/persona', readPersonaForm());
+        if (json?.ok && json.persona) {
+          writePersonaForm(json.persona);
+        }
+      };
+
       renderEmotionToggles();
+      loadPersona();
     </script>
   </body>
 </html>

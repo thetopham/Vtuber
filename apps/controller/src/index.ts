@@ -27,6 +27,7 @@ import { OpenAIResponsesService } from "./services/OpenAIResponsesService";
 import { ResponseOrchestrator } from "./orchestration/ResponseOrchestrator";
 import { VTubeStudioClient } from "./services/vtubeStudio";
 import { createInitialState, patchState } from "./state";
+import { defaultPersonaConfig } from "./orchestration/prompt";
 
 const app = express();
 const server = http.createServer(app);
@@ -64,6 +65,17 @@ const responseOrchestrator = new ResponseOrchestrator({
   service: openAIResponsesService,
   hasOpenAIApiKey: Boolean(env.openaiApiKey),
   model: env.openaiModel
+});
+
+const personaConfigSchema = z.object({
+  name: z.string().trim().min(1).max(48),
+  role: z.string().trim().min(1).max(160),
+  personality: z.string().trim().min(1).max(300),
+  tone: z.string().trim().min(1).max(120),
+  styleRules: z.string().trim().min(1).max(360),
+  background: z.string().trim().min(1).max(600),
+  boundaries: z.string().trim().min(1).max(360),
+  extraInstructions: z.string().trim().max(600).default("")
 });
 
 
@@ -317,6 +329,20 @@ app.post("/api/respond", async (req, res) => {
 
 app.get("/api/ai/status", (_req, res) => {
   return res.json({ ok: true, ai: responseOrchestrator.getStatus() });
+});
+
+app.get("/api/persona", (_req, res) => {
+  return res.json({ ok: true, persona: responseOrchestrator.getPersonaConfig() });
+});
+
+app.post("/api/persona", (req, res) => {
+  const parsed = personaConfigSchema.safeParse({ ...defaultPersonaConfig, ...req.body });
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  }
+
+  responseOrchestrator.setPersonaConfig(parsed.data);
+  return res.json({ ok: true, persona: responseOrchestrator.getPersonaConfig() });
 });
 
 app.get("/health", (_req, res) => {
