@@ -152,22 +152,26 @@ app.post("/api/avatar/test-cycle", async (_req, res) => {
     "wink"
   ] as const;
 
-  cycle.forEach((emotion, index) => {
-    setTimeout(async () => {
+  void (async () => {
+    for (const [index, emotion] of cycle.entries()) {
       const state = expressionEngine.buildExpressionState(emotion);
       await expressionEngine.applyExpressionState(state);
       console.info("[avatar.test-cycle] applied", { emotion, index });
-    }, index * 1600);
-  });
+      await new Promise((resolve) => setTimeout(resolve, 1600));
+    }
+  })();
 
   return res.json({ ok: true, message: "Avatar expression cycle started", cycle });
 });
 
 app.get("/api/avatar/status", (_req, res) => {
+  const adapterStatus = avatarAdapter.getStatus();
   return res.json({
     ok: true,
-    adapter: avatarAdapter.getStatus(),
-    expressionState: expressionEngine.getCurrentState()
+    adapter: adapterStatus,
+    desiredExpressionState: expressionEngine.getCurrentState(),
+    actualActiveToggleState: adapterStatus.actualActiveToggleState,
+    lastTransitionPlan: adapterStatus.lastTransitionPlan
   });
 });
 

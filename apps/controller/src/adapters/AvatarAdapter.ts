@@ -1,9 +1,28 @@
 import type { AvatarExpressionState } from "@vtuber/shared";
 
+export type ToggleExpression =
+  | "angry"
+  | "approval"
+  | "embarrassed"
+  | "excited"
+  | "happy"
+  | "sad"
+  | "shocked"
+  | "wink";
+
+export type ActiveToggleState = Record<ToggleExpression, boolean>;
+
+export type ExpressionTransitionPlan = {
+  toDisable: ToggleExpression[];
+  toEnable: ToggleExpression[];
+};
+
 export type AvatarAdapterStatus = {
   connected: boolean;
   authenticated: boolean;
-  currentExpressionState: AvatarExpressionState;
+  desiredExpressionState: AvatarExpressionState;
+  actualActiveToggleState: ActiveToggleState;
+  lastTransitionPlan: ExpressionTransitionPlan;
   activeTimers: Record<string, number>;
 };
 
