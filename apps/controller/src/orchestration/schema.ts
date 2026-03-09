@@ -29,7 +29,7 @@ export const performanceIntentJsonSchema = {
     },
     notes: { type: "string", minLength: 1, maxLength: 200 }
   },
-  required: ["shouldSpeak", "spokenText", "emotion", "notes"]
+  required: ["shouldSpeak", "spokenText", "emotion", "expressionState", "notes"]
 } as const;
 
 export function normalizeIntent(intent: PerformanceIntent): PerformanceIntent {
