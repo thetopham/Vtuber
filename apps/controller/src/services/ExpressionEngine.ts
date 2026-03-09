@@ -1,24 +1,19 @@
 import emotionMap from "../config/emotion-map.json";
 import {
   avatarExpressionStateSchema,
+  avatarToggleMetadata,
   type AvatarExpressionState,
-  type InternalEmotion,
-  type OverlayExpression
+  type AvatarToggle,
+  type InternalEmotion
 } from "@vtuber/shared";
 import type { AvatarAdapter } from "../adapters/AvatarAdapter";
 
-const allowedOverlays: OverlayExpression[] = ["embarrassed", "wink"];
-
-const allowedCombos = new Set([
-  "happy+embarrassed",
-  "happy+wink",
-  "excited+embarrassed",
-  "shocked+embarrassed"
-]);
+const defaultState: AvatarExpressionState = { active: ["neutral"] };
+const metadataByToggle = new Map(avatarToggleMetadata.map((item) => [item.name, item]));
 
 export class ExpressionEngine {
   private readonly adapter: AvatarAdapter;
-  private currentState: AvatarExpressionState = { base: "happy", overlays: [] };
+  private currentState: AvatarExpressionState = defaultState;
 
   public constructor(adapter: AvatarAdapter) {
     this.adapter = adapter;
@@ -46,47 +41,58 @@ export class ExpressionEngine {
     return avatarExpressionStateSchema.parse(mapped);
   }
 
-  public buildExpressionPlan(
-    nextState: AvatarExpressionState,
-    currentState: AvatarExpressionState
-  ): AvatarExpressionState {
-    if (nextState.base !== currentState.base || nextState.overlays.join(",") !== currentState.overlays.join(",")) {
-      const overlays = nextState.overlays.filter((overlay) => allowedOverlays.includes(overlay));
+  public normalizeExpressionState(input: AvatarExpressionState): AvatarExpressionState {
+    const parsed = avatarExpressionStateSchema.parse(input);
+    const deduped = Array.from(new Set(parsed.active));
 
-      if (overlays.length !== nextState.overlays.length) {
-        throw new Error("Only embarrassed and wink overlays are supported in v1");
-      }
+    let active = [...deduped];
 
-      if (overlays.length > 0) {
-        overlays.forEach((overlay) => {
-          const key = `${nextState.base}+${overlay}`;
-          if (!allowedCombos.has(key)) {
-            console.warn("[ExpressionEngine] Invalid combination attempt", {
-              base: nextState.base,
-              overlay
-            });
-            throw new Error(`Unsupported base/overlay combination: ${key}`);
-          }
-        });
-      }
+    if (active.length > 1 && active.includes("neutral")) {
+      active = active.filter((toggle) => toggle !== "neutral");
     }
 
+    const filtered: AvatarToggle[] = [];
+    for (const toggle of active) {
+      const conflicts = metadataByToggle.get(toggle)?.conflictsWith ?? [];
+      const conflictsWithExisting = filtered.find((existing) => conflicts.includes(existing));
+      if (conflictsWithExisting) {
+        console.warn("[ExpressionEngine] Removing conflicting toggle", {
+          removed: toggle,
+          conflictsWith: conflictsWithExisting
+        });
+        continue;
+      }
+
+      filtered.push(toggle);
+    }
+
+    const normalizedActive: AvatarToggle[] = filtered.length > 0 ? filtered : ["neutral"];
+
     return {
-      base: nextState.base,
-      overlays: [...nextState.overlays],
-      ...(nextState.durationMs ? { durationMs: nextState.durationMs } : {})
+      active: normalizedActive,
+      ...(parsed.durationMs ? { durationMs: parsed.durationMs } : {})
     };
   }
 
   public async applyExpressionState(state: AvatarExpressionState): Promise<AvatarExpressionState> {
-    const parsed = avatarExpressionStateSchema.parse(state);
-    const plan = this.buildExpressionPlan(parsed, this.currentState);
-    await this.adapter.applyExpressionState(plan);
-    this.currentState = plan;
+    const normalized = this.normalizeExpressionState(state);
+
+    if (this.isSameState(this.currentState, normalized)) {
+      return this.currentState;
+    }
+
+    await this.adapter.applyExpressionState(normalized);
+    this.currentState = normalized;
     return this.currentState;
   }
 
   public getCurrentState(): AvatarExpressionState {
     return this.currentState;
+  }
+
+  private isSameState(left: AvatarExpressionState, right: AvatarExpressionState): boolean {
+    const leftActive = [...left.active].sort();
+    const rightActive = [...right.active].sort();
+    return leftActive.join(",") === rightActive.join(",") && left.durationMs === right.durationMs;
   }
 }

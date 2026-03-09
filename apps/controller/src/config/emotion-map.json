@@ -1,38 +1,29 @@
 {
   "neutral": {
-    "base": "happy",
-    "overlays": []
+    "active": ["neutral"]
   },
   "happy": {
-    "base": "happy",
-    "overlays": []
+    "active": ["happy"]
   },
   "angry": {
-    "base": "angry",
-    "overlays": []
+    "active": ["angry"]
   },
   "pouting": {
-    "base": "approval",
-    "overlays": []
+    "active": ["approval"]
   },
   "embarrassed": {
-    "base": "happy",
-    "overlays": ["embarrassed"]
+    "active": ["happy", "embarrassed"]
   },
   "excited": {
-    "base": "excited",
-    "overlays": []
+    "active": ["excited"]
   },
   "sad": {
-    "base": "sad",
-    "overlays": []
+    "active": ["sad"]
   },
   "shocked": {
-    "base": "shocked",
-    "overlays": []
+    "active": ["shocked"]
   },
   "wink": {
-    "base": "happy",
-    "overlays": ["wink"]
+    "active": ["happy", "wink"]
   }
 }

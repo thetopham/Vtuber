@@ -310,7 +310,8 @@ app.post("/api/respond", async (req, res) => {
     if (intent.shouldSpeak) {
       await performanceLoop.performLine({
         text: intent.spokenText,
-        emotion: intent.emotion
+        emotion: intent.emotion,
+        expressionState: intent.expressionState
       });
       triggeredSpeaking = true;
     }

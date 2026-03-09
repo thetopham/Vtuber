@@ -1,14 +1,6 @@
-import type { AvatarExpressionState } from "@vtuber/shared";
+import type { AvatarExpressionState, AvatarToggle } from "@vtuber/shared";
 
-export type ToggleExpression =
-  | "angry"
-  | "approval"
-  | "embarrassed"
-  | "excited"
-  | "happy"
-  | "sad"
-  | "shocked"
-  | "wink";
+export type ToggleExpression = AvatarToggle;
 
 export type ActiveToggleState = Record<ToggleExpression, boolean>;
 
