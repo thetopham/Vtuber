@@ -25,7 +25,7 @@ export const performanceIntentJsonSchema = {
         },
         durationMs: { type: "integer", minimum: 1 }
       },
-      required: ["active"]
+      required: ["active", "durationMs"]
     },
     notes: { type: "string", minLength: 1, maxLength: 200 }
   },
