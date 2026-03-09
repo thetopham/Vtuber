@@ -57,17 +57,17 @@ You still need the existing VTube Studio + controller vars (`VTS_*`, `CONTROLLER
 
 ```bash
 # 1) Speak an arbitrary line with requested emotion
-curl -X POST http://localhost:8787/api/speak \
-  -H "Content-Type: application/json" \
-  -d '{"text":"Wow! That was unexpected.","emotion":"shocked"}'
+Invoke-RestMethod -Method POST http://localhost:8787/api/speak `
+  -ContentType "application/json" `
+  -Body '{"text":"Wow! That was unexpected.","emotion":"shocked"}'
 
 # 2) Run canned speech test line
-curl -X POST http://localhost:8787/api/test/speak \
-  -H "Content-Type: application/json" \
-  -d '{}'
+Invoke-RestMethod -Method POST http://localhost:8787/api/test/speak `
+  -ContentType "application/json" `
+  -Body '{}'
 
 # 3) Inspect speech debug status
-curl http://localhost:8787/api/speech/status
+Invoke-RestMethod -Method GET http://localhost:8787/api/speech/status
 ```
 
 ## How to verify subtitle + speaking + avatar sync
