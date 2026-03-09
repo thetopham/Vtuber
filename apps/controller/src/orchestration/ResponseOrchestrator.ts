@@ -5,7 +5,12 @@ import {
   type RespondRequest
 } from "@vtuber/shared";
 import { OpenAIResponsesService } from "../services/OpenAIResponsesService";
-import { buildSystemPrompt, buildUserPrompt } from "./prompt";
+import {
+  buildSystemPrompt,
+  buildUserPrompt,
+  defaultPersonaConfig,
+  type PersonaConfig
+} from "./prompt";
 import { normalizeIntent } from "./schema";
 
 export type OrchestratorStatus = {
@@ -14,12 +19,14 @@ export type OrchestratorStatus = {
   lastIntent: PerformanceIntent | null;
   lastValidationError: string | null;
   lastRespondTriggeredSpeaking: boolean;
+  persona: PersonaConfig;
 };
 
 export class ResponseOrchestrator {
   private lastIntent: PerformanceIntent | null = null;
   private lastValidationError: string | null = null;
   private lastRespondTriggeredSpeaking = false;
+  private personaConfig: PersonaConfig = { ...defaultPersonaConfig };
 
   constructor(
     private readonly dependencies: {
@@ -30,7 +37,7 @@ export class ResponseOrchestrator {
   ) {}
 
   async generateIntent(input: RespondRequest): Promise<PerformanceIntent> {
-    const systemPrompt = buildSystemPrompt();
+    const systemPrompt = buildSystemPrompt(this.personaConfig);
     const userPrompt = buildUserPrompt(input);
 
     const result = await this.dependencies.service.requestStructuredIntent(systemPrompt, userPrompt);
@@ -53,6 +60,14 @@ export class ResponseOrchestrator {
     }
   }
 
+  setPersonaConfig(personaConfig: PersonaConfig): void {
+    this.personaConfig = { ...personaConfig };
+  }
+
+  getPersonaConfig(): PersonaConfig {
+    return { ...this.personaConfig };
+  }
+
   markRespondOutcome(triggeredSpeaking: boolean): void {
     this.lastRespondTriggeredSpeaking = triggeredSpeaking;
   }
@@ -67,7 +82,8 @@ export class ResponseOrchestrator {
       model: this.dependencies.model,
       lastIntent: this.lastIntent,
       lastValidationError: this.lastValidationError,
-      lastRespondTriggeredSpeaking: this.lastRespondTriggeredSpeaking
+      lastRespondTriggeredSpeaking: this.lastRespondTriggeredSpeaking,
+      persona: this.getPersonaConfig()
     };
   }
 }
