@@ -6,153 +6,45 @@
     <title>Overlay Test Controls</title>
     <style>
       body { font-family: Inter, Arial, sans-serif; background: #111827; color: #fff; margin: 0; padding: 24px; }
-      .card { max-width: 900px; margin: auto; background: #1f2937; border-radius: 14px; padding: 20px; }
+      .card { max-width: 760px; margin: auto; background: #1f2937; border-radius: 14px; padding: 20px; }
       input, select, button { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #374151; }
       button { cursor: pointer; background: #2563eb; color: white; border: none; }
-      button.secondary { background: #374151; }
-      .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
       code { background: #0b1220; padding: 2px 6px; border-radius: 6px; }
-      .section { margin-top: 18px; padding-top: 12px; border-top: 1px solid #374151; }
-      .status { margin-bottom: 8px; font-weight: 600; }
-      .status.ok { color: #34d399; }
-      .status.error { color: #f87171; }
-      pre { white-space: pre-wrap; word-break: break-word; background: #0b1220; border-radius: 8px; padding: 10px; }
     </style>
   </head>
   <body>
     <div class="card">
       <h1>Overlay Test Controls</h1>
+      <p>Controller API base: <code id="base"></code></p>
       <div class="row">
-        <label for="baseInput">Controller API base:</label>
-        <input id="baseInput" style="flex:1" />
-        <button class="secondary" onclick="applyBaseUrl()">Apply</button>
+        <input id="subtitle" value="This is a browser test subtitle" style="flex:1" />
+        <button onclick="sendSubtitle()">Send Subtitle</button>
       </div>
-      <p>Using: <code id="base"></code></p>
-
-      <div class="section">
-        <h2>Overlay events</h2>
-        <div class="row">
-          <input id="subtitle" value="This is a browser test subtitle" style="flex:1" />
-          <button onclick="sendSubtitle()">Send Subtitle</button>
-        </div>
-        <div class="row">
-          <button onclick="sendSpeaking(true)">Speaking On</button>
-          <button onclick="sendSpeaking(false)">Speaking Off</button>
-          <button onclick="runDemo()">Run Demo Sequence</button>
-        </div>
+      <div class="row">
+        <select id="emotion">
+          <option>neutral</option><option>happy</option><option>angry</option><option>sad</option><option>surprised</option><option>thinking</option>
+        </select>
+        <button onclick="sendEmotion()">Set Emotion</button>
+        <button onclick="sendSpeaking(true)">Speaking On</button>
+        <button onclick="sendSpeaking(false)">Speaking Off</button>
       </div>
-
-      <div class="section">
-        <h2>Avatar/VTube Studio controls</h2>
-        <div class="row">
-          <select id="emotion">
-            <option>neutral</option><option>happy</option><option>angry</option><option>sad</option><option>surprised</option><option>thinking</option><option>excited</option><option>embarrassed</option><option>pouting</option><option>shocked</option><option>wink</option>
-          </select>
-          <button onclick="sendAvatarEmotion()">POST /api/avatar/emotion</button>
-        </div>
-        <div class="row">
-          <label>Base</label>
-          <select id="expressionBase">
-            <option>neutral</option><option>happy</option><option>angry</option><option>sad</option><option>surprised</option><option>thinking</option><option>excited</option>
-          </select>
-          <label>Overlay</label>
-          <select id="expressionOverlay">
-            <option value="">(none)</option>
-            <option>embarrassed</option>
-            <option>wink</option>
-          </select>
-          <button onclick="sendAvatarExpression()">POST /api/avatar/expression</button>
-        </div>
-        <div class="row">
-          <button onclick="runAvatarCycle()">POST /api/avatar/test-cycle</button>
-          <button class="secondary" onclick="avatarStatus()">GET /api/avatar/status</button>
-        </div>
-      </div>
-
-      <p id="status" class="status">Ready</p>
+      <div class="row"><button onclick="runDemo()">Run Demo Sequence</button></div>
       <pre id="out"></pre>
     </div>
     <script>
-      const protocol = location.protocol === 'https:' ? 'https' : 'http';
-      const defaultBase = `${protocol}://${location.hostname || 'localhost'}:8787`;
-      let base = defaultBase;
-
-      const baseEl = document.getElementById('base');
-      const baseInput = document.getElementById('baseInput');
+      const base = `http://${location.hostname || 'localhost'}:8787`;
+      document.getElementById('base').textContent = base;
       const out = document.getElementById('out');
-      const status = document.getElementById('status');
-
-      function setBase(nextBase) {
-        base = (nextBase || defaultBase).replace(/\/$/, '');
-        baseEl.textContent = base;
-        baseInput.value = base;
+      async function post(path, body) {
+        const res = await fetch(base + path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+        const json = await res.json();
+        out.textContent = JSON.stringify(json, null, 2);
       }
-
-      window.applyBaseUrl = () => setBase(baseInput.value);
-      setBase(defaultBase);
-
-      function setStatus(message, ok) {
-        status.textContent = message;
-        status.className = `status ${ok ? 'ok' : 'error'}`;
-      }
-
-      async function request(method, path, body) {
-        const url = `${base}${path}`;
-        const options = { method, headers: { 'Content-Type': 'application/json' } };
-        if (body !== undefined) options.body = JSON.stringify(body);
-
-        console.info('[overlay-test] request', { method, url, body });
-
-        try {
-          const res = await fetch(url, options);
-          const text = await res.text();
-          let data;
-
-          try {
-            data = text ? JSON.parse(text) : null;
-          } catch {
-            data = { raw: text };
-          }
-
-          const payload = { ok: res.ok, status: res.status, method, path, requestBody: body ?? null, response: data };
-          out.textContent = JSON.stringify(payload, null, 2);
-
-          if (!res.ok) {
-            const message = `Request failed: ${method} ${path} (${res.status})`;
-            setStatus(message, false);
-            console.error('[overlay-test] request failed', payload);
-            return;
-          }
-
-          setStatus(`Success: ${method} ${path}`, true);
-          console.info('[overlay-test] request succeeded', payload);
-        } catch (error) {
-          const payload = {
-            ok: false,
-            method,
-            path,
-            requestBody: body ?? null,
-            error: error instanceof Error ? error.message : String(error)
-          };
-          out.textContent = JSON.stringify(payload, null, 2);
-          setStatus(`Network error: ${method} ${path}`, false);
-          console.error('[overlay-test] request exception', payload);
-        }
-      }
-
-      window.sendSubtitle = () => request('POST', '/api/subtitle', { text: document.getElementById('subtitle').value, characterName: 'Nova' });
-      window.sendSpeaking = (speaking) => request('POST', '/api/speaking', { speaking });
-      window.runDemo = () => request('POST', '/api/test-sequence', {});
-
-      window.sendAvatarEmotion = () => request('POST', '/api/avatar/emotion', { emotion: document.getElementById('emotion').value });
-      window.sendAvatarExpression = () => {
-        const base = document.getElementById('expressionBase').value;
-        const overlay = document.getElementById('expressionOverlay').value;
-        const payload = overlay ? { base, overlays: [overlay] } : { base, overlays: [] };
-        return request('POST', '/api/avatar/expression', payload);
-      };
-      window.runAvatarCycle = () => request('POST', '/api/avatar/test-cycle', {});
-      window.avatarStatus = () => request('GET', '/api/avatar/status');
+      window.sendSubtitle = () => post('/api/subtitle', { text: document.getElementById('subtitle').value, characterName: 'Nova' });
+      window.sendEmotion = () => post('/api/emotion', { emotion: document.getElementById('emotion').value });
+      window.sendSpeaking = (speaking) => post('/api/speaking', { speaking });
+      window.runDemo = () => post('/api/test-sequence', {});
     </script>
   </body>
 </html>
