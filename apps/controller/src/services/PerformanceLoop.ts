@@ -6,6 +6,7 @@ import type { SpeechProvider } from "./SpeechProvider";
 type PublishFn = <T extends EventName>(type: T, payload: EventPayloadMap[T]) => void;
 
 type PerformanceLoopDependencies = {
+  performerId: string;
   expressionEngine: ExpressionEngine;
   speechProvider: SpeechProvider;
   audioPlaybackService: AudioPlaybackService;
@@ -56,24 +57,24 @@ export class PerformanceLoop {
   }
 
   private async runSpeech(input: SpeakInput): Promise<void> {
-    const { expressionEngine, speechProvider, audioPlaybackService, publish } = this.dependencies;
+    const { expressionEngine, speechProvider, audioPlaybackService, publish, performerId } = this.dependencies;
 
     const expressionState = input.expressionState ?? expressionEngine.buildExpressionState(input.emotion);
     await expressionEngine.applyExpressionState(expressionState);
 
-    publish("emotion.set", { emotion: input.emotion });
-    publish("subtitle.set", { text: input.text });
-    publish("state.set", { state: "speaking" });
-    publish("speaking.set", { speaking: true });
-    publish("speech.started", { text: input.text, emotion: input.emotion });
+    publish("emotion.set", { performerId, emotion: input.emotion });
+    publish("subtitle.set", { performerId, text: input.text });
+    publish("state.set", { performerId, state: "speaking" });
+    publish("speaking.set", { performerId, speaking: true });
+    publish("speech.started", { performerId, text: input.text, emotion: input.emotion });
 
     try {
       const speechResult = await speechProvider.synthesize({ text: input.text });
       await audioPlaybackService.playBuffer(speechResult.audioBuffer, speechResult.extension);
     } finally {
-      publish("speaking.set", { speaking: false });
-      publish("state.set", { state: "idle" });
-      publish("speech.finished", { text: input.text, emotion: input.emotion });
+      publish("speaking.set", { performerId, speaking: false });
+      publish("state.set", { performerId, state: "idle" });
+      publish("speech.finished", { performerId, text: input.text, emotion: input.emotion });
     }
   }
 }

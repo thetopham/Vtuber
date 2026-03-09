@@ -1,28 +1,36 @@
 import { z } from "zod";
 import { DEFAULT_STATE, EMOTIONS } from "./constants";
 
+const performerIdSchema = z.string().trim().min(1).max(48);
+
 export const subtitleSetSchema = z.object({
+  performerId: performerIdSchema.optional(),
   text: z.string().min(1).max(300),
   characterName: z.string().min(1).max(48).optional()
 });
 
 export const speakingSetSchema = z.object({
+  performerId: performerIdSchema.optional(),
   speaking: z.boolean()
 });
 
 export const emotionSetSchema = z.object({
+  performerId: performerIdSchema.optional(),
   emotion: z.enum(EMOTIONS)
 });
 
 export const statusSetSchema = z.object({
+  performerId: performerIdSchema.optional(),
   status: z.string().min(1).max(120)
 });
 
 export const sceneSetSchema = z.object({
+  performerId: performerIdSchema.optional(),
   scene: z.string().min(1).max(120)
 });
 
 export const stateSetSchema = z.object({
+  performerId: performerIdSchema.optional(),
   state: z.enum(["idle", "listening", "speaking"])
 });
 
@@ -36,7 +44,31 @@ export const overlayStateSchema = z.object({
   state: z.enum(["idle", "listening", "speaking"])
 });
 
+export const performerOverlayStateSchema = z.object({
+  performerId: performerIdSchema,
+  characterName: z.string().min(1).max(48),
+  subtitle: z.string().min(1).max(300),
+  speaking: z.boolean(),
+  emotion: z.enum(EMOTIONS),
+  status: z.string().min(1).max(120),
+  scene: z.string().min(1).max(120),
+  state: z.enum(["idle", "listening", "speaking"])
+});
+
+export const multiOverlayStateSchema = z.object({
+  stage: z.object({
+    mode: z.enum(["idle", "banter", "responding"]),
+    activeSpeakerId: performerIdSchema.nullable(),
+    banterEnabled: z.boolean(),
+    banterStatus: z.enum(["idle", "running", "interrupted"]),
+    lastSpeakerId: performerIdSchema.nullable()
+  }),
+  performers: z.record(performerIdSchema, performerOverlayStateSchema),
+  legacy: overlayStateSchema
+});
+
 export const speechLifecycleSchema = z.object({
+  performerId: performerIdSchema.optional(),
   text: z.string().min(1).max(400),
   emotion: z.enum(EMOTIONS)
 });
@@ -50,7 +82,7 @@ export const eventSchemas = {
   "state.set": stateSetSchema,
   "speech.started": speechLifecycleSchema,
   "speech.finished": speechLifecycleSchema,
-  "state.sync": overlayStateSchema
+  "state.sync": z.union([overlayStateSchema, multiOverlayStateSchema])
 } as const;
 
 export type EventName = keyof typeof eventSchemas;
@@ -62,6 +94,8 @@ export type StatusSetPayload = z.infer<typeof statusSetSchema>;
 export type SceneSetPayload = z.infer<typeof sceneSetSchema>;
 export type StateSetPayload = z.infer<typeof stateSetSchema>;
 export type OverlayState = z.infer<typeof overlayStateSchema>;
+export type PerformerOverlayState = z.infer<typeof performerOverlayStateSchema>;
+export type MultiOverlayState = z.infer<typeof multiOverlayStateSchema>;
 export type SpeechLifecyclePayload = z.infer<typeof speechLifecycleSchema>;
 
 export type EventPayloadMap = {
@@ -73,7 +107,7 @@ export type EventPayloadMap = {
   "state.set": StateSetPayload;
   "speech.started": SpeechLifecyclePayload;
   "speech.finished": SpeechLifecyclePayload;
-  "state.sync": OverlayState;
+  "state.sync": OverlayState | MultiOverlayState;
 };
 
 export type OverlayEvent = {

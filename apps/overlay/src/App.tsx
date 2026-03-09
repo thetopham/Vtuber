@@ -6,6 +6,7 @@ import {
   eventSchemas,
   type EventName,
   type EventPayloadMap,
+  type MultiOverlayState,
   type OverlayEvent,
   type OverlayState
 } from "@vtuber/shared";
@@ -18,6 +19,10 @@ function getWsUrl(): string {
   const wsPath = import.meta.env.VITE_WS_PATH ?? DEFAULT_WS_PATH;
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
   return `${protocol}://${host}:${port}${wsPath}`;
+}
+
+function isMultiOverlayState(value: OverlayState | MultiOverlayState): value is MultiOverlayState {
+  return "stage" in value;
 }
 
 export function App() {
@@ -121,7 +126,7 @@ function applyEventToState(
   setOverlayState((prev) => {
     switch (event.type) {
       case "state.sync":
-        return event.payload;
+        return isMultiOverlayState(event.payload) ? event.payload.legacy : event.payload;
       case "subtitle.set":
         return {
           ...prev,
