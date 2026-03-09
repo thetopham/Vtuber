@@ -10,5 +10,6 @@ export const DEFAULT_STATE = {
   speaking: false,
   emotion: "neutral" as Emotion,
   status: "idle",
-  scene: "default"
+  scene: "default",
+  state: "idle" as const
 };
