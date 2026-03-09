@@ -89,6 +89,7 @@ export class VTubeStudioAdapter implements AvatarAdapter {
 
     for (const expression of currentlyActive) {
       if (!nextActive.has(expression)) {
+        this.clearTimer(expression);
         await this.trigger(expression);
       }
     }
@@ -160,6 +161,16 @@ export class VTubeStudioAdapter implements AvatarAdapter {
   private clearTimers(): void {
     this.activeTimers.forEach((timeout) => clearTimeout(timeout));
     this.activeTimers.clear();
+  }
+
+  private clearTimer(expression: OverlayExpression | BaseExpression): void {
+    const timer = this.activeTimers.get(expression);
+    if (!timer) {
+      return;
+    }
+
+    clearTimeout(timer);
+    this.activeTimers.delete(expression);
   }
 
   private async trigger(expression: BaseExpression | OverlayExpression): Promise<void> {
