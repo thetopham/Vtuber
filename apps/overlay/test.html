@@ -6,45 +6,148 @@
     <title>Overlay Test Controls</title>
     <style>
       body { font-family: Inter, Arial, sans-serif; background: #111827; color: #fff; margin: 0; padding: 24px; }
-      .card { max-width: 760px; margin: auto; background: #1f2937; border-radius: 14px; padding: 20px; }
+      .card { max-width: 860px; margin: auto; background: #1f2937; border-radius: 14px; padding: 20px; }
       input, select, button { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #374151; }
       button { cursor: pointer; background: #2563eb; color: white; border: none; }
-      .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+      .toggle {
+        background: #374151;
+        border: 1px solid #4b5563;
+        color: #d1d5db;
+      }
+      .toggle.active {
+        background: #2563eb;
+        color: #fff;
+        border-color: #60a5fa;
+      }
+      .switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        user-select: none;
+      }
+      .switch input {
+        width: 18px;
+        height: 18px;
+        accent-color: #2563eb;
+      }
+      .request-status {
+        margin-top: 12px;
+        border-radius: 8px;
+        padding: 10px;
+      }
+      .request-status.ok { background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); }
+      .request-status.error { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.45); }
       code { background: #0b1220; padding: 2px 6px; border-radius: 6px; }
+      pre { background: #0b1220; border-radius: 8px; padding: 10px; overflow: auto; }
+      h2 { margin: 18px 0 8px; font-size: 1.05rem; }
     </style>
   </head>
   <body>
     <div class="card">
       <h1>Overlay Test Controls</h1>
       <p>Controller API base: <code id="base"></code></p>
+
+      <h2>Subtitle</h2>
       <div class="row">
         <input id="subtitle" value="This is a browser test subtitle" style="flex:1" />
         <button onclick="sendSubtitle()">Send Subtitle</button>
       </div>
+
+      <h2>Emotion Toggles</h2>
+      <div class="row" id="emotion-toggles"></div>
+
+      <h2>Speaking Toggle</h2>
       <div class="row">
-        <select id="emotion">
-          <option>neutral</option><option>happy</option><option>angry</option><option>sad</option><option>surprised</option><option>thinking</option>
-        </select>
-        <button onclick="sendEmotion()">Set Emotion</button>
-        <button onclick="sendSpeaking(true)">Speaking On</button>
-        <button onclick="sendSpeaking(false)">Speaking Off</button>
+        <label class="switch">
+          <input id="speaking-toggle" type="checkbox" onchange="sendSpeaking(this.checked)" />
+          <span>Speaking</span>
+        </label>
       </div>
-      <div class="row"><button onclick="runDemo()">Run Demo Sequence</button></div>
+
+      <h2>Debug Actions</h2>
+      <div class="row">
+        <button onclick="runDemo()">Run Overlay Demo Sequence</button>
+        <button onclick="runAvatarCycle()">Run Avatar Emotion Cycle</button>
+        <button onclick="getAvatarStatus()">Fetch Avatar Status</button>
+      </div>
+
+      <div id="request-status" class="request-status" style="display:none"></div>
       <pre id="out"></pre>
     </div>
     <script>
       const base = `http://${location.hostname || 'localhost'}:8787`;
-      document.getElementById('base').textContent = base;
+      const emotions = ['neutral','angry','pouting','embarrassed','excited','happy','sad','shocked','wink'];
       const out = document.getElementById('out');
-      async function post(path, body) {
-        const res = await fetch(base + path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
-        const json = await res.json();
-        out.textContent = JSON.stringify(json, null, 2);
+      const status = document.getElementById('request-status');
+      const emotionContainer = document.getElementById('emotion-toggles');
+      let activeEmotion = null;
+
+      document.getElementById('base').textContent = base;
+
+      function renderEmotionToggles() {
+        emotionContainer.innerHTML = '';
+        emotions.forEach((emotion) => {
+          const btn = document.createElement('button');
+          btn.textContent = emotion;
+          btn.className = `toggle ${activeEmotion === emotion ? 'active' : ''}`;
+          btn.onclick = () => sendEmotion(emotion);
+          emotionContainer.appendChild(btn);
+        });
       }
-      window.sendSubtitle = () => post('/api/subtitle', { text: document.getElementById('subtitle').value, characterName: 'Nova' });
-      window.sendEmotion = () => post('/api/emotion', { emotion: document.getElementById('emotion').value });
-      window.sendSpeaking = (speaking) => post('/api/speaking', { speaking });
-      window.runDemo = () => post('/api/test-sequence', {});
+
+      function showStatus(level, message) {
+        status.style.display = 'block';
+        status.className = `request-status ${level}`;
+        status.textContent = message;
+      }
+
+      async function request(method, path, body) {
+        try {
+          const res = await fetch(base + path, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: body ? JSON.stringify(body) : undefined
+          });
+
+          const text = await res.text();
+          let parsed = text;
+          try { parsed = text ? JSON.parse(text) : {}; } catch (_e) {}
+
+          if (!res.ok) {
+            const details = typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
+            showStatus('error', `${method} ${path} failed (${res.status}): ${details}`);
+            out.textContent = typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2);
+            return null;
+          }
+
+          showStatus('ok', `${method} ${path} succeeded (${res.status})`);
+          out.textContent = typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2);
+          return parsed;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          showStatus('error', `${method} ${path} request error: ${message}`);
+          out.textContent = message;
+          return null;
+        }
+      }
+
+      window.sendSubtitle = () => request('POST', '/api/subtitle', { text: document.getElementById('subtitle').value, characterName: 'Nova' });
+
+      window.sendEmotion = async (emotion) => {
+        const json = await request('POST', '/api/avatar/emotion', { emotion });
+        if (json?.ok) {
+          activeEmotion = emotion;
+          renderEmotionToggles();
+        }
+      };
+
+      window.sendSpeaking = (speaking) => request('POST', '/api/speaking', { speaking });
+      window.runDemo = () => request('POST', '/api/test-sequence', {});
+      window.runAvatarCycle = () => request('POST', '/api/avatar/test-cycle', {});
+      window.getAvatarStatus = () => request('GET', '/api/avatar/status');
+
+      renderEmotionToggles();
     </script>
   </body>
 </html>
