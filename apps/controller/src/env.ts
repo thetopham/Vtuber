@@ -15,6 +15,7 @@ export const env = {
   vtsPluginDeveloper: process.env.VTS_PLUGIN_DEVELOPER ?? "Vtuber Team",
   vtsAuthToken: process.env.VTS_AUTH_TOKEN,
   openaiApiKey: process.env.OPENAI_API_KEY,
+  openaiModel: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
   openaiTtsModel: process.env.OPENAI_TTS_MODEL ?? "gpt-4o-mini-tts",
   openaiTtsVoice: process.env.OPENAI_TTS_VOICE ?? "alloy",
   hotkeys: {

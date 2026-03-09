@@ -12,15 +12,18 @@ A TypeScript monorepo MVP with OBS overlay and controller APIs.
   /shared       Shared event schema/types/constants/config
 ```
 
-## Minimal TTS performance loop (this PR)
+## What this PR adds
 
-This PR adds a narrow first-pass speech pipeline in `apps/controller`:
-- Speech provider abstraction.
-- OpenAI TTS provider implementation.
-- Local audio playback service (Windows-first, default output device).
-- Performance loop that sequences emotion → subtitle → speaking/state flags → audio playback → reset.
+This PR adds a minimal AI orchestration layer that:
+- Calls the OpenAI **Responses API**.
+- Uses **structured output** with a strict JSON schema.
+- Produces a validated `PerformanceIntent` object.
+- Feeds that intent into the existing performance loop when appropriate.
 
-The existing VTube Studio expression flow is reused and not rewritten.
+Architecture rule:
+- AI returns structured intent.
+- Controller/performance loop executes intent.
+- AI does not directly trigger raw avatar hotkeys or raw overlay events.
 
 ## Required environment variables
 
@@ -28,11 +31,36 @@ Copy `.env.example` to `.env` and set at least:
 
 ```bash
 OPENAI_API_KEY=your_key_here
+OPENAI_MODEL=gpt-4.1-mini
 OPENAI_TTS_MODEL=gpt-4o-mini-tts
 OPENAI_TTS_VOICE=alloy
 ```
 
 You still need the existing VTube Studio + controller vars (`VTS_*`, `CONTROLLER_PORT`, etc.).
+
+## `PerformanceIntent` contract
+
+The orchestrator requests and validates this shape:
+
+```ts
+type PerformanceIntent = {
+  shouldSpeak: boolean;
+  spokenText: string;
+  emotion:
+    | "neutral"
+    | "happy"
+    | "angry"
+    | "pouting"
+    | "embarrassed"
+    | "excited"
+    | "sad"
+    | "shocked"
+    | "wink";
+  notes?: string;
+};
+```
+
+Validation is done with Zod before the intent is used.
 
 ## API endpoints
 
@@ -53,62 +81,59 @@ You still need the existing VTube Studio + controller vars (`VTS_*`, `CONTROLLER
 - `POST /api/test/speak`
 - `GET /api/speech/status`
 
-## Example curl commands
+### AI orchestration endpoints
+- `POST /api/respond-only`
+  - Generates and validates `PerformanceIntent`.
+  - Returns intent only (no TTS, no avatar/overlay updates).
+- `POST /api/respond`
+  - Generates and validates `PerformanceIntent`.
+  - If `shouldSpeak === true`, executes existing speak/performance loop.
+- `GET /api/ai/status`
+  - Returns in-memory AI debug status (key configured, model, last intent, last validation error, whether last `/api/respond` triggered speaking).
 
-```bash
-# 1) Speak an arbitrary line with requested emotion
-Invoke-RestMethod -Method POST http://localhost:8787/api/speak `
+## PowerShell examples
+
+```powershell
+Invoke-RestMethod -Method POST http://localhost:8787/api/respond-only `
   -ContentType "application/json" `
-  -Body '{"text":"Wow! That was unexpected.","emotion":"shocked"}'
+  -Body '{"inputType":"manual","text":"Say something surprised about barely surviving."}'
 
-# 2) Run canned speech test line
-Invoke-RestMethod -Method POST http://localhost:8787/api/test/speak `
+Invoke-RestMethod -Method POST http://localhost:8787/api/respond `
   -ContentType "application/json" `
-  -Body '{}'
+  -Body '{"inputType":"event","event":{"type":"game.moment","summary":"The player survived with 1 HP."}}'
 
-# 3) Inspect speech debug status
-Invoke-RestMethod -Method GET http://localhost:8787/api/speech/status
+Invoke-RestMethod -Method GET http://localhost:8787/api/ai/status
 ```
 
-## How to verify subtitle + speaking + avatar sync
+## Notes on structured outputs
 
-1. Start VTube Studio and ensure plugin/API auth is working.
-2. Start controller + overlay (`npm run dev`).
-3. Call `/api/speak` with text and emotion.
-4. Confirm in overlay:
-   - subtitle updates to your line,
-   - speaking indicator becomes active during playback,
-   - speaking indicator clears when playback ends.
-5. Confirm avatar expression updates to requested emotion before audio plays.
-6. Confirm `/api/speech/status` reports useful debug state (`isPlaying`, last text/emotion, controller state).
+The orchestration layer uses Responses API structured output so model responses adhere to a JSON schema for deterministic controller behavior.
 
-## Windows local playback note
-
-On Windows, playback uses PowerShell + .NET `System.Windows.Media.MediaPlayer` and plays audio through the default system output device. No external routing tools are required in this PR.
+This keeps model output bounded and safer for live-stream execution compared to freeform response text.
 
 ## What to test first
 
-1. `POST /api/test/speak` (quick sanity test).
-2. `GET /api/speech/status` before and after test.
-3. `POST /api/speak` with a few emotions (`happy`, `sad`, `shocked`) and verify expression + subtitle + speaking timing.
+1. `POST /api/respond-only` with a manual prompt and verify a valid `PerformanceIntent` returns.
+2. `POST /api/respond` with an event payload and verify `shouldSpeak=true` triggers subtitle + expression + TTS + speaking state.
+3. `GET /api/ai/status` and verify last intent / validation status updates.
 
 ## Known assumptions
 
-- This version is intentionally synchronous and single-flight: one speech request at a time.
-- Audio is synthesized as WAV via OpenAI speech API and played after full file generation (no streaming yet).
-- Temp files are created for playback and cleaned up after playback.
+- Orchestration is single-turn and stateless (no memory persistence).
+- AI debug state is in-memory only.
+- `/api/respond` remains single-flight because it uses the existing speech loop behavior.
 
 ## Next follow-up PR
 
-- Add a queued speech scheduler instead of single-flight rejection.
-- Add configurable post-speech resting emotion behavior.
-- Add optional richer timeline events (durations/latency) for debugging.
+- Add Twitch chat/event ingestion adapters that map external inputs into orchestrator requests.
+- Add optional moderation/safety pass before executing `shouldSpeak` intents.
+- Add intent quality telemetry (latency + validation metrics) for observability.
 
-## Non-goals in this PR
+## Current non-goals
 
-- No LLM orchestration.
-- No Twitch chat ingestion.
+- No Twitch chat ingestion in this PR.
 - No screenshot/screen-analysis ingestion.
-- No scene automation or persistence.
-- No voice input / speech-to-text.
-- No realtime streaming audio.
+- No memory/database persistence.
+- No scene automation or autonomous scheduling.
+- No voice input / STT.
+- No tool-use or agent loops.

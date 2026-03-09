@@ -6,6 +6,7 @@ import {
   expressionInputSchema,
   makeEvent,
   parseEvent,
+  respondRequestSchema,
   speechRequestSchema,
   speechStatusSchema,
   type EventName,
@@ -22,6 +23,8 @@ import { ExpressionEngine } from "./services/ExpressionEngine";
 import { AudioPlaybackService } from "./services/AudioPlaybackService";
 import { OpenAISpeechProvider } from "./services/OpenAISpeechProvider";
 import { PerformanceLoop } from "./services/PerformanceLoop";
+import { OpenAIResponsesService } from "./services/OpenAIResponsesService";
+import { ResponseOrchestrator } from "./orchestration/ResponseOrchestrator";
 import { VTubeStudioClient } from "./services/vtubeStudio";
 import { createInitialState, patchState } from "./state";
 
@@ -55,6 +58,14 @@ const performanceLoop = new PerformanceLoop({
   publish,
   getControllerStatus: () => currentState.state
 });
+
+const openAIResponsesService = new OpenAIResponsesService();
+const responseOrchestrator = new ResponseOrchestrator({
+  service: openAIResponsesService,
+  hasOpenAIApiKey: Boolean(env.openaiApiKey),
+  model: env.openaiModel
+});
+
 
 app.use(cors({ origin: env.corsOrigin }));
 app.use(express.json());
@@ -252,6 +263,60 @@ app.get("/api/speech/status", (_req, res) => {
   const status = performanceLoop.getStatus();
   const validatedStatus = speechStatusSchema.parse(status);
   return res.json({ ok: true, speech: validatedStatus, state: currentState });
+});
+
+app.post("/api/respond-only", async (req, res) => {
+  const parsed = respondRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  try {
+    const intent = await responseOrchestrator.generateIntent(parsed.data);
+    return res.json({ ok: true, intent });
+  } catch (error) {
+    responseOrchestrator.setLastValidationError((error as Error).message);
+    return res.status(500).json({ ok: false, error: (error as Error).message });
+  }
+});
+
+app.post("/api/respond", async (req, res) => {
+  const parsed = respondRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  try {
+    const intent = await responseOrchestrator.generateIntent(parsed.data);
+    let triggeredSpeaking = false;
+
+    if (intent.shouldSpeak) {
+      await performanceLoop.performLine({
+        text: intent.spokenText,
+        emotion: intent.emotion
+      });
+      triggeredSpeaking = true;
+    }
+
+    responseOrchestrator.markRespondOutcome(triggeredSpeaking);
+
+    return res.json({
+      ok: true,
+      intent,
+      triggeredSpeaking,
+      speech: performanceLoop.getStatus()
+    });
+  } catch (error) {
+    responseOrchestrator.setLastValidationError((error as Error).message);
+    responseOrchestrator.markRespondOutcome(false);
+    const message = (error as Error).message;
+    const statusCode = message.includes("already in progress") ? 409 : 500;
+    return res.status(statusCode).json({ ok: false, error: message });
+  }
+});
+
+app.get("/api/ai/status", (_req, res) => {
+  return res.json({ ok: true, ai: responseOrchestrator.getStatus() });
 });
 
 app.get("/health", (_req, res) => {
