@@ -24,7 +24,7 @@ This repo now includes a focused v1 expression system:
 
 1. Open **VTube Studio**.
 2. Go to **Settings → General → Allow Plugin API access** (wording may vary by version).
-3. Confirm WebSocket API is listening (default `ws://0.0.0.0:8001`).
+3. Confirm WebSocket API is listening (default `ws://127.0.0.1:8001`).
 4. On first controller connect, approve the plugin prompt in VTube Studio.
 
 ### Create model hotkeys
