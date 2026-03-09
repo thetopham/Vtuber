@@ -50,9 +50,24 @@ export class VTubeStudioClient {
     });
 
     this.connected = true;
+    this.socket.on("message", (raw) => {
+      try {
+        const parsed = JSON.parse(raw.toString()) as VTSResponse;
+        console.debug("[VTubeStudioClient] Message", {
+          messageType: parsed.messageType,
+          requestID: parsed.requestID
+        });
+      } catch {
+        console.debug("[VTubeStudioClient] Non-JSON message received");
+      }
+    });
+    this.socket.on("error", (error) => {
+      console.error("[VTubeStudioClient] Socket error", error);
+    });
     this.socket.on("close", () => {
       this.connected = false;
       this.authenticated = false;
+      console.warn("[VTubeStudioClient] Socket closed");
     });
 
     console.info("[VTubeStudioClient] Connected", { url: this.options.url });
