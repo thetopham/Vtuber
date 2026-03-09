@@ -2,6 +2,7 @@ import cors from "cors";
 import express from "express";
 import http from "node:http";
 import {
+  avatarExpressionStateSchema,
   eventSchemas,
   makeEvent,
   parseEvent,
@@ -11,6 +12,7 @@ import {
   type OverlayState
 } from "@vtuber/shared";
 import { WebSocketServer } from "ws";
+import { z } from "zod";
 import { EventBus } from "./eventBus";
 import { env } from "./env";
 import { VTubeStudioService } from "./services/vtubeStudio";
@@ -26,6 +28,10 @@ let currentState: OverlayState = createInitialState();
 
 app.use(cors({ origin: env.corsOrigin }));
 app.use(express.json());
+
+const avatarEmotionRequestSchema = z.object({
+  emotion: z.string().min(1)
+});
 
 function logEvent<T extends EventName>(type: T, payload: EventPayloadMap[T]): void {
   console.info(`[event] ${type}`, payload);
@@ -81,10 +87,7 @@ wsServer.on("connection", (socket) => {
   });
 });
 
-function bindValidatedRoute<T extends EventName>(
-  path: string,
-  type: T
-): void {
+function bindValidatedRoute<T extends EventName>(path: string, type: T): void {
   app.post(path, (req, res) => {
     const result = eventSchemas[type].safeParse(req.body);
 
@@ -105,68 +108,65 @@ bindValidatedRoute("/api/speaking", "speaking.set");
 bindValidatedRoute("/api/emotion", "emotion.set");
 bindValidatedRoute("/api/status", "status.set");
 
-app.post("/api/test-sequence", async (_req, res) => {
-  const steps: Array<{ delay: number; type: EventName; payload: unknown }> = [
-    {
-      delay: 0,
-      type: "status.set",
-      payload: { status: "Running demo sequence" }
-    },
-    {
-      delay: 300,
-      type: "subtitle.set",
-      payload: { text: "Hello chat, I am online.", characterName: "Nova" }
-    },
-    {
-      delay: 700,
-      type: "speaking.set",
-      payload: { speaking: true }
-    },
-    {
-      delay: 1300,
-      type: "emotion.set",
-      payload: { emotion: "happy" }
-    },
-    {
-      delay: 2400,
-      type: "subtitle.set",
-      payload: { text: "Let me think about our next play..." }
-    },
-    {
-      delay: 3100,
-      type: "emotion.set",
-      payload: { emotion: "thinking" }
-    },
-    {
-      delay: 4200,
-      type: "emotion.set",
-      payload: { emotion: "surprised" }
-    },
-    {
-      delay: 4700,
-      type: "subtitle.set",
-      payload: { text: "Wow! That was unexpected.", characterName: "Nova" }
-    },
-    {
-      delay: 5600,
-      type: "speaking.set",
-      payload: { speaking: false }
-    },
-    {
-      delay: 6000,
-      type: "status.set",
-      payload: { status: "Demo sequence complete" }
-    }
-  ];
+app.post("/api/avatar/emotion", async (req, res) => {
+  const payload = avatarEmotionRequestSchema.safeParse(req.body);
 
-  steps.forEach(({ delay, type, payload }) => {
-    setTimeout(() => {
-      const validated = parseEvent(type, payload);
-      publish(type, validated);
-    }, delay);
+  if (!payload.success) {
+    return res.status(400).json({ error: "Invalid emotion", details: payload.error.flatten() });
+  }
+
+  let emotion;
+  try {
+    emotion = vtubeStudio.normalizeEmotionInput(payload.data.emotion);
+  } catch (error) {
+    return res.status(400).json({ error: "Invalid emotion", details: String(error) });
+  }
+
+  currentState = patchState(currentState, { emotion });
+  await vtubeStudio.setEmotion(emotion);
+
+  return res.json({ ok: true, emotion, expression: vtubeStudio.buildExpressionState(emotion) });
+});
+
+app.post("/api/avatar/expression", async (req, res) => {
+  const result = avatarExpressionStateSchema.safeParse(req.body);
+
+  if (!result.success) {
+    return res.status(400).json({
+      error: "Invalid expression state",
+      details: result.error.flatten()
+    });
+  }
+
+  const state = await vtubeStudio.applyExpressionState(result.data);
+  return res.json({ ok: true, state });
+});
+
+app.post("/api/avatar/test-cycle", async (_req, res) => {
+  const sequence = [
+    "neutral",
+    "angry",
+    "pouting",
+    "embarrassed",
+    "excited",
+    "happy",
+    "sad",
+    "shocked",
+    "wink"
+  ] as const;
+
+  sequence.forEach((emotion, index) => {
+    setTimeout(async () => {
+      currentState = patchState(currentState, { emotion });
+      await vtubeStudio.setEmotion(emotion);
+    }, index * 1800);
   });
 
-  return res.json({ ok: true, message: "Demo sequence started" });
+  return res.json({ ok: true, sequence });
+});
+
+app.get("/api/avatar/status", (_req, res) => {
+  return res.json({ ok: true, avatar: vtubeStudio.getStatus() });
 });
 
 app.get("/health", (_req, res) => {

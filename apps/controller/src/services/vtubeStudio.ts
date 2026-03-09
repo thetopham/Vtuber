@@ -1,33 +1,65 @@
-import type { Emotion, OverlayState } from "@vtuber/shared";
-import type { AvatarAdapter } from "../adapters/AvatarAdapter";
+import type {
+  AvatarAdapterStatus,
+  AvatarExpressionState,
+  Emotion,
+  OverlayState
+} from "@vtuber/shared";
+import { VTubeStudioAdapter } from "../adapters/VTubeStudioAdapter";
+import { env } from "../env";
+import { ExpressionEngine } from "./ExpressionEngine";
 
-export class VTubeStudioService implements AvatarAdapter {
+export class VTubeStudioService {
+  private readonly adapter = new VTubeStudioAdapter(
+    env.vtubeStudioWsUrl,
+    env.vtubeStudioTokenPath,
+    env.vtubeStudioAuthToken
+  );
+
+  private readonly expressionEngine = new ExpressionEngine(this.adapter);
+
   async connect(): Promise<void> {
-    // TODO: Connect to the VTube Studio WebSocket API.
-    // TODO: Handle authentication flow and plugin token storage.
-    console.info("[VTubeStudioService] connect() stub called");
+    try {
+      await this.adapter.connect();
+    } catch (error) {
+      console.error("[VTubeStudioService] Failed to connect", error);
+    }
   }
 
   async disconnect(): Promise<void> {
-    // TODO: Gracefully close WebSocket and clean up subscriptions.
-    console.info("[VTubeStudioService] disconnect() stub called");
+    await this.adapter.disconnect();
+  }
+
+  getStatus(): AvatarAdapterStatus {
+    const status = this.adapter.getStatus();
+    return {
+      ...status,
+      activeState: this.expressionEngine.getCurrentState(),
+      activeTimers: this.expressionEngine.getTimerStatus()
+    };
   }
 
   async setEmotion(emotion: Emotion): Promise<void> {
-    // TODO: Map emotion states to VTube Studio expressions/hotkeys.
-    console.info("[VTubeStudioService] setEmotion() stub called", { emotion });
+    const state = this.expressionEngine.buildExpressionState(emotion);
+    await this.expressionEngine.applyExpressionState(state);
   }
 
-  async setSpeaking(speaking: boolean): Promise<void> {
-    // TODO: Sync speaking state to mouth animation or idle/talk hotkeys.
-    console.info("[VTubeStudioService] setSpeaking() stub called", { speaking });
+  async setSpeaking(_speaking: boolean): Promise<void> {
+    // reserved for future lip sync integrations
   }
 
   async syncState(state: OverlayState): Promise<void> {
-    // TODO: Keep avatar behavior aligned with controller state.
-    console.info("[VTubeStudioService] syncState() stub called", {
-      emotion: state.emotion,
-      speaking: state.speaking
-    });
+    await this.setEmotion(state.emotion);
+  }
+
+  normalizeEmotionInput(input: string): Emotion {
+    return this.expressionEngine.normalizeEmotionInput(input);
+  }
+
+  async applyExpressionState(state: AvatarExpressionState): Promise<AvatarExpressionState> {
+    return this.expressionEngine.applyExpressionState(state);
+  }
+
+  buildExpressionState(emotion: Emotion): AvatarExpressionState {
+    return this.expressionEngine.buildExpressionState(emotion);
   }
 }

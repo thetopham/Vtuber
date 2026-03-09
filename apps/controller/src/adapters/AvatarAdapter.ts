@@ -1,9 +1,10 @@
-import type { Emotion, OverlayState } from "@vtuber/shared";
+import type { AvatarAdapterStatus, AvatarExpressionState } from "@vtuber/shared";
 
 export interface AvatarAdapter {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
-  setEmotion(emotion: Emotion): Promise<void>;
-  setSpeaking(speaking: boolean): Promise<void>;
-  syncState(state: OverlayState): Promise<void>;
+  getStatus(): AvatarAdapterStatus;
+  resetToDefault(): Promise<void>;
+  applyExpressionState(state: AvatarExpressionState): Promise<void>;
+  clearAllExpressions(): Promise<void>;
 }
