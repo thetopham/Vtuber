@@ -12,11 +12,6 @@ export type PersonaConfig = {
   extraInstructions: string;
 };
 
-export type PromptContext = {
-  otherPerformerName?: string;
-  replyTarget?: "chat" | "operator" | "cohost" | "event";
-};
-
 export const defaultPersonaConfig: PersonaConfig = {
   name: "Nova",
   role: "concise livestream VTuber performer",
@@ -40,7 +35,7 @@ function buildToggleGuidance(): string[] {
   });
 }
 
-export function buildSystemPrompt(persona: PersonaConfig, context: PromptContext = {}): string {
+export function buildSystemPrompt(persona: PersonaConfig): string {
   const extraInstructions = persona.extraInstructions.trim();
 
   return [
@@ -49,8 +44,6 @@ export function buildSystemPrompt(persona: PersonaConfig, context: PromptContext
     `Tone: ${persona.tone}.`,
     `Style preferences: ${persona.styleRules}.`,
     `Context: ${persona.background}.`,
-    ...(context.otherPerformerName ? [`Your co-host is ${context.otherPerformerName}.`] : []),
-    ...(context.replyTarget ? [`Current reply target: ${context.replyTarget}.`] : []),
     `Boundaries: ${persona.boundaries}.`,
     "Return only structured performance intent.",
     "Allowed emotions: neutral, happy, angry, pouting, embarrassed, excited, sad, shocked, wink.",
