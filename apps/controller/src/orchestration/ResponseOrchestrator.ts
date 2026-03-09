@@ -8,8 +8,7 @@ import {
   buildSystemPrompt,
   buildUserPrompt,
   defaultPersonaConfig,
-  type PersonaConfig,
-  type PromptContext
+  type PersonaConfig
 } from "./prompt";
 import { normalizeIntent } from "./schema";
 
@@ -43,8 +42,8 @@ export class ResponseOrchestrator {
     }
   ) {}
 
-  async generateIntent(input: RespondRequest, context: PromptContext = {}): Promise<PerformanceIntent> {
-    const systemPrompt = buildSystemPrompt(this.personaConfig, context);
+  async generateIntent(input: RespondRequest): Promise<PerformanceIntent> {
+    const systemPrompt = buildSystemPrompt(this.personaConfig);
     const userPrompt = buildUserPrompt(input);
 
     const result = await this.dependencies.service.requestStructuredIntent(systemPrompt, userPrompt);
