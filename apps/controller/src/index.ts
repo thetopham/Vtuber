@@ -78,6 +78,18 @@ const personaConfigSchema = z.object({
   extraInstructions: z.string().trim().max(600).default("")
 });
 
+const personaPresetNameSchema = z.string().trim().min(1).max(48);
+const personaPresetSaveSchema = z.object({
+  presetName: personaPresetNameSchema,
+  persona: personaConfigSchema
+});
+const personaPresetLoadSchema = z.object({
+  presetName: personaPresetNameSchema
+});
+
+const personaPresets = new Map<string, z.infer<typeof personaConfigSchema>>();
+personaPresets.set("Default", { ...defaultPersonaConfig });
+
 
 app.use(cors({ origin: env.corsOrigin }));
 app.use(express.json());
@@ -349,6 +361,45 @@ app.post("/api/persona", (req, res) => {
 
   responseOrchestrator.setPersonaConfig(parsed.data);
   return res.json({ ok: true, persona: responseOrchestrator.getPersonaConfig() });
+});
+
+app.get("/api/personas", (_req, res) => {
+  return res.json({
+    ok: true,
+    presets: Array.from(personaPresets.keys()).sort((a, b) => a.localeCompare(b)),
+    activePersona: responseOrchestrator.getPersonaConfig()
+  });
+});
+
+app.post("/api/personas", (req, res) => {
+  const parsed = personaPresetSaveSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  }
+
+  const { presetName, persona } = parsed.data;
+  personaPresets.set(presetName, { ...persona });
+
+  return res.json({
+    ok: true,
+    presetName,
+    presets: Array.from(personaPresets.keys()).sort((a, b) => a.localeCompare(b))
+  });
+});
+
+app.post("/api/personas/load", (req, res) => {
+  const parsed = personaPresetLoadSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  }
+
+  const preset = personaPresets.get(parsed.data.presetName);
+  if (!preset) {
+    return res.status(404).json({ ok: false, error: `Persona preset not found: ${parsed.data.presetName}` });
+  }
+
+  responseOrchestrator.setPersonaConfig(preset);
+  return res.json({ ok: true, presetName: parsed.data.presetName, persona: responseOrchestrator.getPersonaConfig() });
 });
 
 app.get("/health", (_req, res) => {
