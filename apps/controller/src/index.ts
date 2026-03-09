@@ -74,6 +74,10 @@ eventBus.on("speaking.set", async ({ speaking }) => {
   currentState = patchState(currentState, { speaking });
 });
 
+eventBus.on("emotion.set", ({ emotion }) => {
+  currentState = patchState(currentState, { emotion });
+});
+
 eventBus.on("status.set", ({ status }) => {
   currentState = patchState(currentState, { status });
 });
@@ -116,7 +120,7 @@ app.post("/api/avatar/emotion", async (req, res) => {
   const normalized = expressionEngine.normalizeEmotionInput(parsed.data.emotion);
   const state = expressionEngine.buildExpressionState(normalized);
   const applied = await expressionEngine.applyExpressionState(state);
-  currentState = patchState(currentState, { emotion: normalized });
+  publish("emotion.set", { emotion: normalized });
 
   return res.json({ ok: true, emotion: normalized, expressionState: applied });
 });
