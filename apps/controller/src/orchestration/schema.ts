@@ -10,13 +10,13 @@ const emotionEnum = [...internalEmotions];
 const avatarToggleEnum = [...avatarToggles];
 
 export const performanceIntentJsonSchema = {
-  type: "object",
+  type: ["object", "null"],
   additionalProperties: false,
   properties: {
     shouldSpeak: { type: "boolean" },
     spokenText: { type: "string", minLength: 0, maxLength: 240 },
     emotion: {
-      type: "string",
+      type: ["string", "null"],
       enum: emotionEnum
     },
     expressionState: {
@@ -36,7 +36,7 @@ export const performanceIntentJsonSchema = {
     },
     notes: { type: "string", minLength: 1, maxLength: 200 }
   },
-  required: ["shouldSpeak", "spokenText", "emotion", "expressionState"]
+  required: ["shouldSpeak", "spokenText", "emotion", "expressionState", "notes"]
 } as const;
 
 export function normalizeIntent(intent: PerformanceIntent): PerformanceIntent {
