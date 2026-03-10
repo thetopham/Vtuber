@@ -1,10 +1,30 @@
 import dotenv from "dotenv";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_CONTROLLER_PORT, DEFAULT_WS_PATH } from "@vtuber/shared";
+import type { TtsStyleMode } from "./speech/ttsInstructions";
 
 const rootEnvPath = fileURLToPath(new URL("../../../.env", import.meta.url));
 
 dotenv.config({ path: rootEnvPath });
+
+const ttsStyleModes = new Set<TtsStyleMode>(["default", "cozy", "high_energy", "comforting", "focused"]);
+
+function parseTtsStyleMode(value: string | undefined): TtsStyleMode {
+  if (value && ttsStyleModes.has(value as TtsStyleMode)) {
+    return value as TtsStyleMode;
+  }
+
+  return "default";
+}
+
+function parseTtsSpeed(value: string | undefined): number {
+  const numericValue = Number(value ?? "0.94");
+  if (!Number.isFinite(numericValue)) {
+    return 0.94;
+  }
+
+  return Math.min(Math.max(numericValue, 0.25), 4);
+}
 
 export const env = {
   port: Number(process.env.CONTROLLER_PORT ?? DEFAULT_CONTROLLER_PORT),
@@ -17,7 +37,9 @@ export const env = {
   openaiApiKey: process.env.OPENAI_API_KEY,
   openaiModel: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
   openaiTtsModel: process.env.OPENAI_TTS_MODEL ?? "gpt-4o-mini-tts",
-  openaiTtsVoice: process.env.OPENAI_TTS_VOICE ?? "alloy",
+  openaiTtsVoice: process.env.OPENAI_TTS_VOICE ?? "verse",
+  openaiTtsSpeed: parseTtsSpeed(process.env.OPENAI_TTS_SPEED),
+  openaiTtsStyleMode: parseTtsStyleMode(process.env.OPENAI_TTS_STYLE_MODE),
   hotkeys: {
     happy: process.env.VTS_HOTKEY_HAPPY ?? "happy",
     neutral: process.env.VTS_HOTKEY_NEUTRAL ?? "neutral",

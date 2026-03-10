@@ -54,19 +54,21 @@ const audioPlaybackService = new AudioPlaybackService();
 
 let currentState: OverlayState = createInitialState();
 
-const performanceLoop = new PerformanceLoop({
-  expressionEngine,
-  speechProvider,
-  audioPlaybackService,
-  publish,
-  getControllerStatus: () => currentState.state
-});
-
 const openAIResponsesService = new OpenAIResponsesService();
 const responseOrchestrator = new ResponseOrchestrator({
   service: openAIResponsesService,
   hasOpenAIApiKey: Boolean(env.openaiApiKey),
   model: env.openaiModel
+});
+
+const performanceLoop = new PerformanceLoop({
+  expressionEngine,
+  speechProvider,
+  audioPlaybackService,
+  publish,
+  getControllerStatus: () => currentState.state,
+  getCurrentPersona: () => responseOrchestrator.getPersonaConfig(),
+  getCurrentStyleMode: () => env.openaiTtsStyleMode
 });
 
 const personaConfigSchema = z.object({

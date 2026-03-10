@@ -9,6 +9,7 @@ import emotionMap from "../config/emotion-map.json";
 const emotionEnum = [...internalEmotions];
 const avatarToggleEnum = [...avatarToggles];
 
+// Strict-mode JSON schema requires a fixed shape, so optional fields are modeled as nullable and always required.
 export const performanceIntentJsonSchema = {
   type: "object", 
   additionalProperties: false,
