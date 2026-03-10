@@ -10,7 +10,7 @@ const emotionEnum = [...internalEmotions];
 const avatarToggleEnum = [...avatarToggles];
 
 export const performanceIntentJsonSchema = {
-  type: ["object", "null"],
+  type: "object", 
   additionalProperties: false,
   properties: {
     shouldSpeak: { type: "boolean" },
@@ -20,7 +20,7 @@ export const performanceIntentJsonSchema = {
       enum: emotionEnum
     },
     expressionState: {
-      type: "object",
+      type: ["object", "null"],
       additionalProperties: false,
       properties: {
         active: {
