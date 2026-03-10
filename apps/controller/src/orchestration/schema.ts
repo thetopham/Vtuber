@@ -10,6 +10,7 @@ const emotionEnum = [...internalEmotions];
 const avatarToggleEnum = [...avatarToggles];
 
 export const performanceIntentJsonSchema = {
+  // Keep required + additionalProperties:false so OpenAI strict JSON schema mode stays deterministic.
   type: "object", 
   additionalProperties: false,
   properties: {

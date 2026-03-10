@@ -2,6 +2,7 @@ import type { AvatarExpressionState, Emotion, EventName, EventPayloadMap, Speech
 import { ExpressionEngine } from "./ExpressionEngine";
 import type { AudioPlaybackService } from "./AudioPlaybackService";
 import type { SpeechProvider } from "./SpeechProvider";
+import type { TtsPersonaSnapshot, TtsStyleMode } from "../speech/ttsInstructions";
 
 type PublishFn = <T extends EventName>(type: T, payload: EventPayloadMap[T]) => void;
 
@@ -17,6 +18,8 @@ export type SpeakInput = {
   text: string;
   emotion: Emotion;
   expressionState?: AvatarExpressionState;
+  persona?: TtsPersonaSnapshot;
+  styleMode?: TtsStyleMode;
 };
 
 export class PerformanceLoop {
@@ -68,7 +71,12 @@ export class PerformanceLoop {
     publish("speech.started", { text: input.text, emotion: input.emotion });
 
     try {
-      const speechResult = await speechProvider.synthesize({ text: input.text });
+      const speechResult = await speechProvider.synthesize({
+        text: input.text,
+        emotion: input.emotion,
+        persona: input.persona,
+        styleMode: input.styleMode
+      });
       await audioPlaybackService.playBuffer(speechResult.audioBuffer, speechResult.extension);
     } finally {
       publish("speaking.set", { speaking: false });

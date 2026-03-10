@@ -326,7 +326,8 @@ app.post("/api/respond", async (req, res) => {
       await performanceLoop.performLine({
         text: intent.spokenText,
         emotion: intent.emotion,
-        expressionState: intent.expressionState
+        expressionState: intent.expressionState,
+        persona: responseOrchestrator.getPersonaConfig()
       });
       triggeredSpeaking = true;
     }

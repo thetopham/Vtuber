@@ -17,7 +17,9 @@ export const env = {
   openaiApiKey: process.env.OPENAI_API_KEY,
   openaiModel: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
   openaiTtsModel: process.env.OPENAI_TTS_MODEL ?? "gpt-4o-mini-tts",
-  openaiTtsVoice: process.env.OPENAI_TTS_VOICE ?? "alloy",
+  openaiTtsVoice: process.env.OPENAI_TTS_VOICE ?? "verse",
+  openaiTtsSpeed: Number(process.env.OPENAI_TTS_SPEED ?? "0.94"),
+  openaiTtsStyleMode: process.env.OPENAI_TTS_STYLE_MODE ?? "default",
   hotkeys: {
     happy: process.env.VTS_HOTKEY_HAPPY ?? "happy",
     neutral: process.env.VTS_HOTKEY_NEUTRAL ?? "neutral",
