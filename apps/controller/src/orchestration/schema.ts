@@ -29,12 +29,10 @@ export const performanceIntentJsonSchema = {
             type: "string",
             enum: avatarToggleEnum
           },
-          minItems: 1,
-          
-        },
-        durationMs: { type: ["integer", "null"], minimum: 1 }
+          minItems: 1
+        }
       },
-      required: ["active", "durationMs"]
+      required: ["active"]
     },
     notes: { type: "string", minLength: 1, maxLength: 200 }
   },
