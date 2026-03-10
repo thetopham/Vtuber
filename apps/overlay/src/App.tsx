@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DEFAULT_CONTROLLER_PORT,
   DEFAULT_WS_PATH,
   defaultOverlayState,
   eventSchemas,
+  reduceOverlayState,
   type EventName,
-  type EventPayloadMap,
   type OverlayEvent,
   type OverlayState
 } from "@vtuber/shared";
@@ -29,34 +29,77 @@ export function App() {
   const wsUrl = useMemo(() => getWsUrl(), []);
 
   useEffect(() => {
-    const socket = new WebSocket(wsUrl);
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+    let disposed = false;
 
-    socket.addEventListener("open", () => {
-      setConnection("connected");
-    });
-
-    socket.addEventListener("close", () => {
-      setConnection("disconnected");
-    });
-
-    socket.addEventListener("message", (event) => {
-      try {
-        const message = JSON.parse(event.data) as {
-          type: EventName;
-          payload: unknown;
-          timestamp: number;
-        };
-        const parsed = parseIncomingEvent(message);
-        setLastEvent(parsed);
-
-        applyEventToState(parsed, setOverlayState);
-      } catch (error) {
-        console.error("Failed to parse incoming WS event", error);
+    const clearReconnectTimer = () => {
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
       }
-    });
+    };
+
+    const scheduleReconnect = () => {
+      if (disposed || reconnectTimer !== null) {
+        return;
+      }
+
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, 1500);
+    };
+
+    const connect = () => {
+      if (disposed) {
+        return;
+      }
+
+      setConnection("connecting");
+      socket = new WebSocket(wsUrl);
+
+      socket.addEventListener("open", () => {
+        if (!disposed) {
+          setConnection("connected");
+        }
+      });
+
+      socket.addEventListener("close", () => {
+        if (disposed) {
+          return;
+        }
+
+        setConnection("disconnected");
+        scheduleReconnect();
+      });
+
+      socket.addEventListener("error", () => {
+        socket?.close();
+      });
+
+      socket.addEventListener("message", (event) => {
+        try {
+          const message = JSON.parse(event.data) as {
+            type: EventName;
+            payload: unknown;
+            timestamp: number;
+          };
+          const parsed = parseIncomingEvent(message);
+          setLastEvent(parsed);
+          setOverlayState((prev) => reduceOverlayState(prev, parsed));
+        } catch (error) {
+          console.error("Failed to parse incoming WS event", error);
+        }
+      });
+    };
+
+    connect();
 
     return () => {
-      socket.close();
+      disposed = true;
+      clearReconnectTimer();
+      socket?.close();
     };
   }, [wsUrl]);
 
@@ -109,55 +152,7 @@ function parseIncomingEvent(event: {
 
   return {
     type: event.type,
-    payload: schema.parse(event.payload) as EventPayloadMap[EventName],
+    payload: schema.parse(event.payload),
     timestamp: event.timestamp
   } as OverlayEvent;
-}
-
-function applyEventToState(
-  event: OverlayEvent,
-  setOverlayState: Dispatch<SetStateAction<OverlayState>>
-): void {
-  setOverlayState((prev) => {
-    switch (event.type) {
-      case "state.sync":
-        return event.payload;
-      case "subtitle.set":
-        return {
-          ...prev,
-          subtitle: event.payload.text,
-          characterName: event.payload.characterName ?? prev.characterName
-        };
-      case "speaking.set":
-        return {
-          ...prev,
-          speaking: event.payload.speaking
-        };
-      case "emotion.set":
-        return {
-          ...prev,
-          emotion: event.payload.emotion
-        };
-      case "status.set":
-        return {
-          ...prev,
-          status: event.payload.status
-        };
-      case "scene.set":
-        return {
-          ...prev,
-          scene: event.payload.scene
-        };
-      case "state.set":
-        return {
-          ...prev,
-          state: event.payload.state
-        };
-      case "speech.started":
-      case "speech.finished":
-        return prev;
-      default:
-        return prev;
-    }
-  });
 }

@@ -5,7 +5,9 @@ import {
   emotionInputSchema,
   expressionInputSchema,
   makeEvent,
+  overlayStateEventNames,
   parseEvent,
+  reduceOverlayState,
   respondRequestSchema,
   speechRequestSchema,
   speechStatusSchema,
@@ -19,15 +21,15 @@ import { z } from "zod";
 import { VTubeStudioAdapter } from "./adapters/VTubeStudioAdapter";
 import { EventBus } from "./eventBus";
 import { env } from "./env";
-import { ExpressionEngine } from "./services/ExpressionEngine";
+import { ResponseOrchestrator } from "./orchestration/ResponseOrchestrator";
+import { defaultPersonaConfig } from "./orchestration/prompt";
 import { AudioPlaybackService } from "./services/AudioPlaybackService";
+import { ExpressionEngine } from "./services/ExpressionEngine";
+import { OpenAIResponsesService } from "./services/OpenAIResponsesService";
 import { OpenAISpeechProvider } from "./services/OpenAISpeechProvider";
 import { PerformanceLoop } from "./services/PerformanceLoop";
-import { OpenAIResponsesService } from "./services/OpenAIResponsesService";
-import { ResponseOrchestrator } from "./orchestration/ResponseOrchestrator";
 import { VTubeStudioClient } from "./services/vtubeStudio";
-import { createInitialState, patchState } from "./state";
-import { defaultPersonaConfig } from "./orchestration/prompt";
+import { createInitialState } from "./state";
 
 const app = express();
 const server = http.createServer(app);
@@ -90,7 +92,6 @@ const personaPresetLoadSchema = z.object({
 const personaPresets = new Map<string, z.infer<typeof personaConfigSchema>>();
 personaPresets.set("Default", { ...defaultPersonaConfig });
 
-
 app.use(cors({ origin: env.corsOrigin }));
 app.use(express.json());
 
@@ -113,31 +114,18 @@ function publish<T extends EventName>(type: T, payload: EventPayloadMap[T]): voi
   broadcast(makeEvent(type, payload));
 }
 
-eventBus.on("subtitle.set", async ({ text, characterName }) => {
-  currentState = patchState(currentState, {
-    subtitle: text,
-    ...(characterName ? { characterName } : {})
+function bindStateUpdater<T extends (typeof overlayStateEventNames)[number]>(type: T): void {
+  if (type === "state.sync") {
+    return;
+  }
+
+  eventBus.on(type, (payload) => {
+    currentState = reduceOverlayState(currentState, makeEvent(type, payload));
   });
-});
+}
 
-eventBus.on("speaking.set", async ({ speaking }) => {
-  currentState = patchState(currentState, { speaking });
-});
-
-eventBus.on("emotion.set", ({ emotion }) => {
-  currentState = patchState(currentState, { emotion });
-});
-
-eventBus.on("status.set", ({ status }) => {
-  currentState = patchState(currentState, { status });
-});
-
-eventBus.on("scene.set", ({ scene }) => {
-  currentState = patchState(currentState, { scene });
-});
-
-eventBus.on("state.set", ({ state }) => {
-  currentState = patchState(currentState, { state });
+overlayStateEventNames.forEach((type) => {
+  bindStateUpdater(type);
 });
 
 wsServer.on("connection", (socket) => {
@@ -161,24 +149,40 @@ function bindValidatedRoute<T extends EventName>(path: string, type: T): void {
   });
 }
 
+function asyncHandler(
+  handler: (
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => Promise<unknown>
+): express.RequestHandler {
+  return (req, res, next) => {
+    void Promise.resolve(handler(req, res, next)).catch(next);
+  };
+}
+
 bindValidatedRoute("/api/subtitle", "subtitle.set");
 bindValidatedRoute("/api/speaking", "speaking.set");
 bindValidatedRoute("/api/status", "status.set");
+bindValidatedRoute("/api/scene", "scene.set");
 bindValidatedRoute("/api/state", "state.set");
 
-app.post("/api/avatar/emotion", async (req, res) => {
-  const parsed = emotionInputSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
+app.post(
+  "/api/avatar/emotion",
+  asyncHandler(async (req, res) => {
+    const parsed = emotionInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
 
-  const normalized = expressionEngine.normalizeEmotionInput(parsed.data.emotion);
-  const state = expressionEngine.buildExpressionState(normalized);
-  const applied = await expressionEngine.applyExpressionState(state);
-  publish("emotion.set", { emotion: normalized });
+    const normalized = expressionEngine.normalizeEmotionInput(parsed.data.emotion);
+    const state = expressionEngine.buildExpressionState(normalized);
+    const applied = await expressionEngine.applyExpressionState(state);
+    publish("emotion.set", { emotion: normalized });
 
-  return res.json({ ok: true, emotion: normalized, expressionState: applied });
-});
+    return res.json({ ok: true, emotion: normalized, expressionState: applied });
+  })
+);
 
 app.post("/api/avatar/expression", async (req, res) => {
   const parsed = expressionInputSchema.safeParse(req.body);
@@ -249,7 +253,6 @@ app.post("/api/test-sequence", async (_req, res) => {
 
   return res.json({ ok: true, message: "Demo sequence started" });
 });
-
 
 app.post("/api/speak", async (req, res) => {
   const parsed = speechRequestSchema.safeParse(req.body);
@@ -415,8 +418,11 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
   return res.status(500).json({ error: "Internal server error" });
 });
 
-server.listen(env.port, async () => {
+server.listen(env.port, () => {
   console.info(`Controller listening on http://localhost:${env.port}`);
   console.info(`WebSocket endpoint ws://localhost:${env.port}${env.wsPath}`);
-  await avatarAdapter.connect();
+
+  void avatarAdapter.connect().catch((error) => {
+    console.error("[controller] failed to connect avatar adapter", error);
+  });
 });

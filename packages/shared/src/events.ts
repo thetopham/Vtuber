@@ -84,6 +84,18 @@ export type OverlayEvent = {
   };
 }[EventName];
 
+export const overlayStateEventNames = [
+  "subtitle.set",
+  "speaking.set",
+  "emotion.set",
+  "status.set",
+  "scene.set",
+  "state.set",
+  "state.sync"
+] as const;
+
+export type OverlayStateEventName = (typeof overlayStateEventNames)[number];
+
 export const defaultOverlayState: OverlayState = {
   ...DEFAULT_STATE
 };
@@ -104,4 +116,47 @@ export function parseEvent<T extends EventName>(
   payload: unknown
 ): EventPayloadMap[T] {
   return eventSchemas[type].parse(payload) as EventPayloadMap[T];
+}
+
+export function reduceOverlayState(previous: OverlayState, event: OverlayEvent): OverlayState {
+  switch (event.type) {
+    case "state.sync":
+      return event.payload;
+    case "subtitle.set":
+      return {
+        ...previous,
+        subtitle: event.payload.text,
+        characterName: event.payload.characterName ?? previous.characterName
+      };
+    case "speaking.set":
+      return {
+        ...previous,
+        speaking: event.payload.speaking
+      };
+    case "emotion.set":
+      return {
+        ...previous,
+        emotion: event.payload.emotion
+      };
+    case "status.set":
+      return {
+        ...previous,
+        status: event.payload.status
+      };
+    case "scene.set":
+      return {
+        ...previous,
+        scene: event.payload.scene
+      };
+    case "state.set":
+      return {
+        ...previous,
+        state: event.payload.state
+      };
+    case "speech.started":
+    case "speech.finished":
+      return previous;
+    default:
+      return previous;
+  }
 }
