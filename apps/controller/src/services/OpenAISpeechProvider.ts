@@ -1,4 +1,6 @@
 import { env } from "../env";
+import { humanizeSpeechText } from "../speech/humanizeSpeechText";
+import { buildTtsInstructions } from "../speech/ttsInstructions";
 import type { SpeechProvider, SynthesizeSpeechInput, SynthesizeSpeechResult } from "./SpeechProvider";
 
 export class OpenAISpeechProvider implements SpeechProvider {
@@ -6,6 +8,13 @@ export class OpenAISpeechProvider implements SpeechProvider {
     if (!env.openaiApiKey) {
       throw new Error("OPENAI_API_KEY is required for TTS synthesis");
     }
+
+    const spokenText = humanizeSpeechText(input.text);
+    const builtInstructions = buildTtsInstructions(
+      input.persona ?? {},
+      input.styleMode ?? env.openaiTtsStyleMode,
+      input.emotion
+    );
 
     const response = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
@@ -16,7 +25,11 @@ export class OpenAISpeechProvider implements SpeechProvider {
       body: JSON.stringify({
         model: env.openaiTtsModel,
         voice: env.openaiTtsVoice,
-        input: input.text,
+        input: spokenText,
+        instructions:
+          builtInstructions ||
+          "Speak naturally and conversationally with warm, stream-safe VTuber delivery.",
+        speed: env.openaiTtsSpeed,
         response_format: "wav"
       })
     });

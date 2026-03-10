@@ -1,5 +1,11 @@
+import type { Emotion } from "@vtuber/shared";
+import type { TtsPersonaInput, TtsStyleMode } from "../speech/ttsInstructions";
+
 export type SynthesizeSpeechInput = {
   text: string;
+  emotion?: Emotion;
+  persona?: TtsPersonaInput;
+  styleMode?: TtsStyleMode;
 };
 
 export type SynthesizeSpeechResult = {
