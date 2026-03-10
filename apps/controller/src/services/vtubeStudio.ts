@@ -12,6 +12,7 @@ export type VTubeStudioClientOptions = {
   pluginDeveloper: string;
   pluginIcon?: string;
   authToken?: string;
+  requestTimeoutMs?: number;
 };
 
 export class VTubeStudioClient {
@@ -20,6 +21,7 @@ export class VTubeStudioClient {
   private connected = false;
   private authenticated = false;
   private authToken: string | undefined;
+  private requestSequence = 0;
 
   public constructor(options: VTubeStudioClientOptions) {
     this.options = options;
@@ -43,16 +45,32 @@ export class VTubeStudioClient {
       return;
     }
 
-    this.socket = await new Promise<WebSocket>((resolve, reject) => {
-      const socket = new WebSocket(this.options.url);
-      socket.once("open", () => resolve(socket));
-      socket.once("error", reject);
+    const socket = await new Promise<WebSocket>((resolve, reject) => {
+      const candidate = new WebSocket(this.options.url);
+      const onOpen = () => {
+        candidate.off("error", onError);
+        resolve(candidate);
+      };
+      const onError = (error: Error) => {
+        candidate.off("open", onOpen);
+        reject(error);
+      };
+
+      candidate.once("open", onOpen);
+      candidate.once("error", onError);
     });
 
+    this.socket = socket;
     this.connected = true;
-    this.socket.on("close", () => {
+
+    socket.on("error", (error) => {
+      console.error("[VTubeStudioClient] Socket error", error);
+    });
+
+    socket.on("close", () => {
       this.connected = false;
       this.authenticated = false;
+      this.socket = null;
     });
 
     console.info("[VTubeStudioClient] Connected", { url: this.options.url });
@@ -63,9 +81,10 @@ export class VTubeStudioClient {
       return;
     }
 
+    const socket = this.socket;
     await new Promise<void>((resolve) => {
-      this.socket?.once("close", () => resolve());
-      this.socket?.close();
+      socket.once("close", () => resolve());
+      socket.close();
     });
 
     this.socket = null;
@@ -105,13 +124,18 @@ export class VTubeStudioClient {
     console.info("[VTubeStudioClient] Triggered hotkey", { hotkeyID });
   }
 
+  private nextRequestId(): string {
+    this.requestSequence += 1;
+    return `vts-${Date.now()}-${this.requestSequence}`;
+  }
+
   private async sendRequest(messageType: string, data: Record<string, unknown>): Promise<unknown> {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+    const socket = this.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
       throw new Error("VTube Studio socket is not open");
     }
 
-    const requestID = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
+    const requestID = this.nextRequestId();
     const payload = {
       apiName: "VTubeStudioPublicAPI",
       apiVersion: "1.0",
@@ -121,6 +145,44 @@ export class VTubeStudioClient {
     };
 
     return await new Promise((resolve, reject) => {
+      let settled = false;
+      const timeoutMs = this.options.requestTimeoutMs ?? 10_000;
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        socket.off("message", onMessage);
+        socket.off("close", onClose);
+        socket.off("error", onError);
+      };
+
+      const fail = (error: Error) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        cleanup();
+        reject(error);
+      };
+
+      const succeed = (value: unknown) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        cleanup();
+        resolve(value);
+      };
+
+      const onClose = () => {
+        fail(new Error(`VTube Studio socket closed while waiting for ${messageType}`));
+      };
+
+      const onError = (error: Error) => {
+        fail(error);
+      };
+
       const onMessage = (raw: WebSocket.RawData) => {
         try {
           const parsed = JSON.parse(raw.toString()) as VTSResponse;
@@ -129,22 +191,29 @@ export class VTubeStudioClient {
             return;
           }
 
-          this.socket?.off("message", onMessage);
-
           if (parsed.messageType === "APIError") {
-            reject(new Error(`VTube Studio APIError for ${messageType}: ${JSON.stringify(parsed.data)}`));
+            fail(new Error(`VTube Studio APIError for ${messageType}: ${JSON.stringify(parsed.data)}`));
             return;
           }
 
-          resolve(parsed.data ?? {});
+          succeed(parsed.data ?? {});
         } catch (error) {
-          this.socket?.off("message", onMessage);
-          reject(error);
+          fail(error instanceof Error ? error : new Error(String(error)));
         }
       };
 
-      this.socket?.on("message", onMessage);
-      this.socket?.send(JSON.stringify(payload));
+      const timeout = setTimeout(() => {
+        fail(new Error(`VTube Studio request timed out after ${timeoutMs}ms: ${messageType}`));
+      }, timeoutMs);
+
+      socket.on("message", onMessage);
+      socket.once("close", onClose);
+      socket.once("error", onError);
+      socket.send(JSON.stringify(payload), (error) => {
+        if (error) {
+          fail(error);
+        }
+      });
     });
   }
 }

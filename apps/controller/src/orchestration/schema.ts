@@ -1,6 +1,13 @@
-import { avatarExpressionStateSchema, type PerformanceIntent } from "@vtuber/shared";
+import {
+  avatarExpressionStateSchema,
+  avatarToggles,
+  internalEmotions,
+  type PerformanceIntent
+} from "@vtuber/shared";
 import emotionMap from "../config/emotion-map.json";
 
+const emotionEnum = [...internalEmotions];
+const avatarToggleEnum = [...avatarToggles];
 
 export const performanceIntentJsonSchema = {
   type: "object",
@@ -10,7 +17,7 @@ export const performanceIntentJsonSchema = {
     spokenText: { type: "string", minLength: 0, maxLength: 240 },
     emotion: {
       type: "string",
-      enum: ["neutral", "happy", "angry", "pouting", "embarrassed", "excited", "sad", "shocked", "wink"]
+      enum: emotionEnum
     },
     expressionState: {
       type: "object",
@@ -20,20 +27,22 @@ export const performanceIntentJsonSchema = {
           type: "array",
           items: {
             type: "string",
-            enum: ["angry", "approval", "embarrassed", "excited", "happy", "neutral", "sad", "shocked", "wink"]
-          }
+            enum: avatarToggleEnum
+          },
+          minItems: 1,
+          uniqueItems: true
         },
         durationMs: { type: "integer", minimum: 1 }
       },
-      required: ["active", "durationMs"]
+      required: ["active"]
     },
     notes: { type: "string", minLength: 1, maxLength: 200 }
   },
-  required: ["shouldSpeak", "spokenText", "emotion", "expressionState", "notes"]
+  required: ["shouldSpeak", "spokenText", "emotion"]
 } as const;
 
 export function normalizeIntent(intent: PerformanceIntent): PerformanceIntent {
-  const normalizedSpokenText = !intent.shouldSpeak && intent.spokenText.length > 0 ? "" : intent.spokenText;
+  const normalizedSpokenText = intent.shouldSpeak ? intent.spokenText.trim().slice(0, 240) : "";
   const fallbackExpressionState = avatarExpressionStateSchema.parse(
     emotionMap[intent.emotion as keyof typeof emotionMap]
   );
@@ -41,6 +50,9 @@ export function normalizeIntent(intent: PerformanceIntent): PerformanceIntent {
   return {
     ...intent,
     spokenText: normalizedSpokenText,
-    expressionState: intent.expressionState ?? fallbackExpressionState
+    expressionState: intent.expressionState
+      ? avatarExpressionStateSchema.parse(intent.expressionState)
+      : fallbackExpressionState,
+    ...(intent.notes?.trim() ? { notes: intent.notes.trim() } : {})
   };
 }

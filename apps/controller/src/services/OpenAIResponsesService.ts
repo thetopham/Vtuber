@@ -1,20 +1,23 @@
 import { env } from "../env";
 import { performanceIntentJsonSchema } from "../orchestration/schema";
 
+type ResponsesApiContent = {
+  type?: string;
+  text?: string;
+};
+
 type ResponsesApiResponse = {
   output_text?: string;
   output?: Array<{
     type?: string;
-    content?: Array<{
-      type?: string;
-      text?: string;
-    }>;
+    content?: ResponsesApiContent[];
   }>;
 };
 
 export type StructuredResponseResult = {
   parsedOutput: unknown;
   rawOutputText: string;
+  parseError: string | null;
 };
 
 export class OpenAIResponsesService {
@@ -23,15 +26,16 @@ export class OpenAIResponsesService {
       throw new Error("OPENAI_API_KEY is required for orchestration");
     }
 
+    const requestId = `vtuber-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${env.openaiApiKey}`,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "X-Client-Request-Id": requestId
       },
       body: JSON.stringify({
         model: env.openaiModel,
-        
         input: [
           {
             role: "system",
@@ -61,10 +65,19 @@ export class OpenAIResponsesService {
     const payload = (await response.json()) as ResponsesApiResponse;
     const rawOutputText = this.extractText(payload);
 
-    return {
-      rawOutputText,
-      parsedOutput: JSON.parse(rawOutputText) as unknown
-    };
+    try {
+      return {
+        rawOutputText,
+        parsedOutput: JSON.parse(rawOutputText) as unknown,
+        parseError: null
+      };
+    } catch (error) {
+      return {
+        rawOutputText,
+        parsedOutput: rawOutputText,
+        parseError: error instanceof Error ? error.message : String(error)
+      };
+    }
   }
 
   private extractText(payload: ResponsesApiResponse): string {
@@ -72,13 +85,16 @@ export class OpenAIResponsesService {
       return payload.output_text;
     }
 
-    const fromContent = payload.output
+    const outputText = payload.output
       ?.flatMap((item) => item.content ?? [])
-      .find((content) => content.type === "output_text" && typeof content.text === "string")
-      ?.text;
+      .filter((content) => content.type === "output_text" && typeof content.text === "string")
+      .map((content) => content.text?.trim() ?? "")
+      .filter(Boolean)
+      .join("\n")
+      .trim();
 
-    if (fromContent) {
-      return fromContent;
+    if (outputText) {
+      return outputText;
     }
 
     throw new Error("OpenAI Responses output_text not found");

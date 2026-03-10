@@ -45,9 +45,13 @@ export class ResponseOrchestrator {
   async generateIntent(input: RespondRequest): Promise<PerformanceIntent> {
     const systemPrompt = buildSystemPrompt(this.personaConfig);
     const userPrompt = buildUserPrompt(input);
-
     const result = await this.dependencies.service.requestStructuredIntent(systemPrompt, userPrompt);
+
     this.lastRawModelOutput = result.rawOutputText;
+
+    if (result.parseError) {
+      return this.useFallbackIntent(input, result.parsedOutput, `Model output was not valid JSON: ${result.parseError}`);
+    }
 
     const parsedIntent = performanceIntentSchema.safeParse(result.parsedOutput);
     if (parsedIntent.success) {
@@ -59,16 +63,25 @@ export class ResponseOrchestrator {
       return intent;
     }
 
-    const fallbackIntent = this.buildNeutralFallback(result.parsedOutput);
+    return this.useFallbackIntent(input, result.parsedOutput, parsedIntent.error.message, parsedIntent.error.issues);
+  }
+
+  private useFallbackIntent(
+    input: RespondRequest,
+    rawOutput: unknown,
+    validationMessage: string,
+    issues?: unknown
+  ): PerformanceIntent {
+    const fallbackIntent = this.buildNeutralFallback(rawOutput);
     this.lastIntent = fallbackIntent;
-    this.lastValidationError = parsedIntent.error.message;
+    this.lastValidationError = validationMessage;
     this.lastValidationSucceeded = false;
     this.lastFallbackEmotionUsed = true;
 
     console.error("[orchestrator] intent validation failed; using neutral fallback", {
       input,
-      rawOutput: result.rawOutputText,
-      error: parsedIntent.error.issues
+      rawOutput: this.lastRawModelOutput,
+      error: issues ?? validationMessage
     });
 
     return fallbackIntent;

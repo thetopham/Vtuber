@@ -17,15 +17,17 @@ export class AudioPlaybackService {
   async playBuffer(audioBuffer: Buffer, extension: "wav" | "mp3"): Promise<string> {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "vtuber-tts-"));
     const audioPath = path.join(tempDir, `line-${Date.now()}.${extension}`);
+
     await writeFile(audioPath, audioBuffer);
     this.lastAudioFilePath = audioPath;
-
     this.isPlaying = true;
+
     try {
       await this.playFile(audioPath);
       return audioPath;
     } finally {
       this.isPlaying = false;
+      this.lastAudioFilePath = null;
       await rm(tempDir, { recursive: true, force: true });
     }
   }
