@@ -19,9 +19,9 @@ function parseTtsStyleMode(value: string | undefined): TtsStyleMode {
 
 function parseTtsSpeed(value: string | undefined): number {
   const normalizedValue = value?.trim();
-  const numericValue = Number(normalizedValue ? normalizedValue : "0.94");
+  const numericValue = Number(normalizedValue ? normalizedValue : "1");
   if (!Number.isFinite(numericValue)) {
-    return 0.94;
+    return 1;
   }
 
   return Math.min(Math.max(numericValue, 0.25), 4);
@@ -38,7 +38,7 @@ export const env = {
   openaiApiKey: process.env.OPENAI_API_KEY,
   openaiModel: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
   openaiTtsModel: process.env.OPENAI_TTS_MODEL ?? "gpt-4o-mini-tts",
-  openaiTtsVoice: process.env.OPENAI_TTS_VOICE ?? "verse",
+  openaiTtsVoice: process.env.OPENAI_TTS_VOICE ?? "marin",
   openaiTtsSpeed: parseTtsSpeed(process.env.OPENAI_TTS_SPEED),
   openaiTtsStyleMode: parseTtsStyleMode(process.env.OPENAI_TTS_STYLE_MODE),
   hotkeys: {
