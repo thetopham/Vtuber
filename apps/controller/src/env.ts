@@ -18,7 +18,8 @@ function parseTtsStyleMode(value: string | undefined): TtsStyleMode {
 }
 
 function parseTtsSpeed(value: string | undefined): number {
-  const numericValue = Number(value ?? "0.94");
+  const normalizedValue = value?.trim();
+  const numericValue = Number(normalizedValue ? normalizedValue : "0.94");
   if (!Number.isFinite(numericValue)) {
     return 0.94;
   }
